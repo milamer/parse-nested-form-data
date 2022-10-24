@@ -40,13 +40,14 @@
     "@babel/runtime": "^7.19.0"
   },
   "devDependencies": {
+    "@remix-run/web-file": "^3.0.2",
     "@remix-run/web-form-data": "^3.0.3",
     "kcd-scripts": "^12.3.0",
     "rimraf": "^3.0.2",
     "typescript": "^4.8.4"
   },
   "peerDependencies": {
-    "@remix-run/web-file": "^3.0.2"
+    "@remix-run/web-file": ">=3.0.0"
   },
   "peerDependenciesMeta": {
     "@remix-run/web-form-data": {
