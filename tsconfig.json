@@ -1,0 +1,7 @@
+{
+  "extends": "./node_modules/kcd-scripts/shared-tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "lib": ["dom.iterable"]
+  }
+}
