@@ -1,13 +1,15 @@
 {
-  "name": "parse-form-data",
-  "version": "0.0.0-semantically-released",
+  "name": "parse-nested-form-data",
+  "version": "1.0.0",
   "description": "A tiny node module for parsing FormData by name into objects and arrays",
-  "main": "dist/parse-form-data.cjs.js",
-  "module": "dist/parse-form-data.esm.js",
+  "main": "dist/parse-nested-form-data.cjs.js",
+  "module": "dist/parse-nested-form-data.esm.js",
   "types": "dist/index.d.ts",
   "keywords": [
     "FormData",
     "parse",
+    "nested",
+    "form",
     "array",
     "object",
     "parse"
@@ -16,19 +18,19 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/milamer/parse-form-data"
+    "url": "https://github.com/milamer/parse-nested-form-data"
   },
   "bugs": {
-    "url": "https://github.com/milamer/parse-form-data/issues"
+    "url": "https://github.com/milamer/parse-nested-form-data/issues"
   },
-  "homepage": "https://github.com/milamer/parse-form-data#readme",
+  "homepage": "https://github.com/milamer/parse-nested-form-data#readme",
   "files": [
     "dist"
   ],
   "scripts": {
     "clean": "rimraf dist coverage node_modules",
     "build:toc": "npx doctoc .",
-    "build": "kcd-scripts build --bundle --environment BUILD_NAME:parseFormData",
+    "build": "kcd-scripts build --bundle --environment BUILD_NAME:parseNestedFormData",
     "lint": "kcd-scripts lint",
     "setup": "npm install && npm run validate -s",
     "test": "kcd-scripts test",

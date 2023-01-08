@@ -1,5 +1,5 @@
 /**
- * @name parse-form-data
+ * @name parse-nested-form-data
  * @license MIT license.
  * @copyright (c) 2022 Christian Schurr
  * @author Christian Schurr <chris@schurr.dev>

@@ -1,5 +1,5 @@
 <div align="center">
-<h1>parse-form-data</h1>
+<h1>parse-nested-form-data</h1>
 
 <p>A tiny node module for parsing FormData by name into objects and arrays</p>
 </div>
@@ -59,7 +59,7 @@ This module is distributed via [npm][npm] which is bundled with [node][node] and
 should be installed as one of your project's `dependencies`:
 
 ```sh
-npm install parse-form-data
+npm install parse-nested-form-data
 ```
 
 ## Name
@@ -339,25 +339,25 @@ where most of the setup is from.
 <!-- prettier-ignore-start -->
 [npm]: https://www.npmjs.com
 [node]: https://nodejs.org
-[build-badge]: https://img.shields.io/github/workflow/status/milamer/parse-form-data/validate?logo=github&style=flat-square
-[build]: https://github.com/milamer/parse-form-data/actions?query=workflow%3Avalidate
-[coverage-badge]: https://img.shields.io/codecov/c/github/milamer/parse-form-data.svg?style=flat-square
-[coverage]: https://codecov.io/github/milamer/parse-form-data
-[version-badge]: https://img.shields.io/npm/v/parse-form-data.svg?style=flat-square
-[package]: https://www.npmjs.com/package/parse-form-data
-[downloads-badge]: https://img.shields.io/npm/dm/parse-form-data.svg?style=flat-square
-[npmtrends]: https://www.npmtrends.com/parse-form-data
-[license-badge]: https://img.shields.io/npm/l/parse-form-data.svg?style=flat-square
-[license]: https://github.com/milamer/parse-form-data/blob/master/LICENSE
+[build-badge]: https://img.shields.io/github/workflow/status/milamer/parse-nested-form-data/validate?logo=github&style=flat-square
+[build]: https://github.com/milamer/parse-nested-form-data/actions?query=workflow%3Avalidate
+[coverage-badge]: https://img.shields.io/codecov/c/github/milamer/parse-nested-form-data.svg?style=flat-square
+[coverage]: https://codecov.io/github/milamer/parse-nested-form-data
+[version-badge]: https://img.shields.io/npm/v/parse-nested-form-data.svg?style=flat-square
+[package]: https://www.npmjs.com/package/parse-nested-form-data
+[downloads-badge]: https://img.shields.io/npm/dm/parse-nested-form-data.svg?style=flat-square
+[npmtrends]: https://www.npmtrends.com/parse-nested-form-data
+[license-badge]: https://img.shields.io/npm/l/parse-nested-form-data.svg?style=flat-square
+[license]: https://github.com/milamer/parse-nested-form-data/blob/master/LICENSE
 [prs-badge]: https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square
 [prs]: http://makeapullrequest.com
 [coc-badge]: https://img.shields.io/badge/code%20of-conduct-ff69b4.svg?style=flat-square
-[coc]: https://github.com/milamer/parse-form-data/blob/master/CODE_OF_CONDUCT.md
+[coc]: https://github.com/milamer/parse-nested-form-data/blob/master/CODE_OF_CONDUCT.md
 [emojis]: https://github.com/all-contributors/all-contributors#emoji-key
 [all-contributors]: https://github.com/all-contributors/all-contributors
-[all-contributors-badge]: https://img.shields.io/github/all-contributors/milamer/parse-form-data?color=orange&style=flat-square
-[bugs]: https://github.com/milamer/parse-form-data/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+sort%3Acreated-desc+label%3Abug
-[requests]: https://github.com/milamer/parse-form-data/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement
-[good-first-issue]: https://github.com/milamer/parse-form-data/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement+label%3A%22good+first+issue%22
+[all-contributors-badge]: https://img.shields.io/github/all-contributors/milamer/parse-nested-form-data?color=orange&style=flat-square
+[bugs]: https://github.com/milamer/parse-nested-form-data/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+sort%3Acreated-desc+label%3Abug
+[requests]: https://github.com/milamer/parse-nested-form-data/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement
+[good-first-issue]: https://github.com/milamer/parse-nested-form-data/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement+label%3A%22good+first+issue%22
 [match-sorter]: https://github.com/kentcdodds/match-sorter/blob/main/README.md
 <!-- prettier-ignore-end -->

@@ -47,7 +47,7 @@ jobs:
     needs: main
     runs-on: ubuntu-latest
     if:
-      ${{ github.repository == 'milamer/parse-form-data' &&
+      ${{ github.repository == 'milamer/parse-nested-form-data' &&
       contains('refs/heads/main,refs/heads/beta,refs/heads/next,refs/heads/alpha',
       github.ref) && github.event_name == 'push' }}
     steps:
