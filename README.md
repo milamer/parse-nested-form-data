@@ -62,6 +62,12 @@ should be installed as one of your project's `dependencies`:
 npm install parse-nested-form-data
 ```
 
+and then import it in your project:
+
+```ts
+import {parseFormData} from 'parse-nested-form-data'
+```
+
 ## Name
 
 The name prop is used to tell the parser how to create an object out of the
