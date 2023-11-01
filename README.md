@@ -345,7 +345,7 @@ where most of the setup is from.
 <!-- prettier-ignore-start -->
 [npm]: https://www.npmjs.com
 [node]: https://nodejs.org
-[build-badge]: https://img.shields.io/github/workflow/status/milamer/parse-nested-form-data/validate?logo=github&style=flat-square
+[build-badge]: https://img.shields.io/github/actions/workflow/status/milamer/parse-nested-form-data/validate.yml?branch=main&logo=github&style=flat-square
 [build]: https://github.com/milamer/parse-nested-form-data/actions?query=workflow%3Avalidate
 [coverage-badge]: https://img.shields.io/codecov/c/github/milamer/parse-nested-form-data.svg?style=flat-square
 [coverage]: https://codecov.io/github/milamer/parse-nested-form-data
