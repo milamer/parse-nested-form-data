@@ -1,6 +1,11 @@
 import {FormData} from '@remix-run/web-form-data'
 import {File} from '@remix-run/web-file'
-import {DuplicateKeyError, MixedArrayError, parseFormData} from '../'
+import {
+  DuplicateKeyError,
+  ForbiddenKeyError,
+  MixedArrayError,
+  parseFormData,
+} from '../'
 
 describe('basic functionality', () => {
   describe('transform value', () => {
@@ -408,4 +413,81 @@ describe('complex examples', () => {
       },
     })
   })
+})
+
+describe('prototype pollution protection', () => {
+  const proto = Object.prototype as unknown as {[key: string]: unknown}
+  afterEach(() => {
+    // Defensive: clean any test-leaked properties off Object.prototype so a
+    // failure can't silently affect later tests.
+    delete proto.polluted
+  })
+
+  it('rejects `__proto__` as a top-level key', () => {
+    const formData = new FormData()
+    formData.append('__proto__.polluted', 'yes')
+    expect(() => parseFormData(formData)).toThrowError(
+      new ForbiddenKeyError('__proto__'),
+    )
+    expect(proto.polluted).toBeUndefined()
+  })
+
+  it('rejects `__proto__` as a nested key', () => {
+    const formData = new FormData()
+    formData.append('a.__proto__.polluted', 'yes')
+    expect(() => parseFormData(formData)).toThrowError(
+      new ForbiddenKeyError('a.__proto__'),
+    )
+    expect(proto.polluted).toBeUndefined()
+  })
+
+  it('rejects `__proto__` reached through an array element', () => {
+    const formData = new FormData()
+    formData.append('a[0].__proto__.polluted', 'yes')
+    expect(() => parseFormData(formData)).toThrowError(
+      new ForbiddenKeyError('a[0].__proto__'),
+    )
+    expect(proto.polluted).toBeUndefined()
+  })
+
+  it('rejects `constructor` as a key', () => {
+    const formData = new FormData()
+    formData.append('constructor.prototype.polluted', 'yes')
+    expect(() => parseFormData(formData)).toThrowError(
+      new ForbiddenKeyError('constructor'),
+    )
+  })
+
+  it('rejects `prototype` as a key', () => {
+    const formData = new FormData()
+    formData.append('prototype.polluted', 'yes')
+    expect(() => parseFormData(formData)).toThrowError(
+      new ForbiddenKeyError('prototype'),
+    )
+  })
+
+  it('rejects `__proto__` as a leaf assignment', () => {
+    const formData = new FormData()
+    formData.append('a.__proto__', 'yes')
+    expect(() => parseFormData(formData)).toThrowError(
+      new ForbiddenKeyError('a.__proto__'),
+    )
+  })
+
+  // The cases below pin the invariant for the array branch. Today the regex
+  // restricts array-index segments to digit characters, so a forbidden key
+  // can't reach the array branch (the cases parse as an object pathPart with
+  // a trailing `]` and trip the array/object duplicate-key guard). If the
+  // regex is ever loosened to accept arbitrary content inside `[...]`, these
+  // tests will start failing and the array branch will need its own
+  // forbidden-key check.
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'does not pollute via `a[%s]`',
+    key => {
+      const formData = new FormData()
+      formData.append(`a[${key}]`, 'yes')
+      expect(() => parseFormData(formData)).toThrow()
+      expect(proto.polluted).toBeUndefined()
+    },
+  )
 })
