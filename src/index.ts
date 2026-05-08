@@ -73,6 +73,29 @@ export class MixedArrayError extends Error {
     this.key = key
   }
 }
+/**
+ * Thrown when a path part would access or assign a property on
+ * `Object.prototype` (`__proto__`, `constructor`, `prototype`). Rejected
+ * regardless of whether pollution would actually occur, to keep input
+ * unambiguous.
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('__proto__.polluted', 'yes')
+ * parseFormData(formData)
+ * // throws ForbiddenKeyError('__proto__')
+ * ```
+ */
+export class ForbiddenKeyError extends Error {
+  key: string
+  constructor(key: string) {
+    super(`Forbidden key at path part ${key}`)
+    this.key = key
+  }
+}
+
+const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
 type JsonObject = {[Key in string]?: JsonValue}
 type JsonArray = Array<JsonValue>
@@ -333,6 +356,9 @@ function handlePathPart(
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
 ] {
+  if (FORBIDDEN_OBJECT_KEYS.has(pathPart.path)) {
+    throw new ForbiddenKeyError(pathPart.pathToPart)
+  }
   if (pathPart.type === 'object') {
     if (Array.isArray(currentPathObject)) {
       throw new DuplicateKeyError(pathPart.pathToPart)
