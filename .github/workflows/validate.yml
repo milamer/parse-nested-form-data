@@ -11,10 +11,10 @@ on:
       - '!all-contributors/**'
   pull_request: {}
 
-# cancel superseded runs of the same branch / PR
+# cancel superseded PR runs; never cancel pushes, which may be mid-release
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
