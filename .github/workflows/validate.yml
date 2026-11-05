@@ -1,16 +1,12 @@
 name: validate
 on:
   push:
+    # same branches as package.json#release
     branches:
+      - 'main'
       # maintenance branches (1.x, 1.2.x); GitHub's filter syntax, not micromatch
       - '[0-9]+.x'
       - '[0-9]+.[0-9]+.x'
-      - 'main'
-      - 'next'
-      - 'next-major'
-      - 'beta'
-      - 'alpha'
-      - '!all-contributors/**'
   pull_request: {}
 
 # cancel superseded PR runs; let push runs finish so every commit gets a result
