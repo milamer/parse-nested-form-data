@@ -2,7 +2,9 @@ name: validate
 on:
   push:
     branches:
-      - '+([0-9])?(.{+([0-9]),x}).x'
+      # maintenance branches (1.x, 1.2.x); GitHub's filter syntax, not micromatch
+      - '[0-9]+.x'
+      - '[0-9]+.[0-9]+.x'
       - 'main'
       - 'next'
       - 'next-major'
@@ -55,3 +57,14 @@ jobs:
         with:
           use_oidc: true
           files: coverage/lcov.info
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v7
+
+      - name: 🔎 Lint GitHub workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
