@@ -53,6 +53,7 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           use_oidc: true
+          files: coverage/lcov.info
 
   release:
     needs: main

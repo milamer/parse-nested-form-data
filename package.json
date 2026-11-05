@@ -29,7 +29,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "clean": "node -e \"for (const d of ['dist','coverage']) require('fs').rmSync(d,{recursive:true,force:true})\"",
-    "build": "npm run clean && tsdown",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsdown",
     "build:toc": "npx doctoc .",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
