@@ -11,7 +11,7 @@ on:
       - '!all-contributors/**'
   pull_request: {}
 
-# cancel superseded PR runs; never cancel pushes, which may be mid-release
+# cancel superseded PR runs; let push runs finish so every commit gets a result
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -55,50 +55,3 @@ jobs:
         with:
           use_oidc: true
           files: coverage/lcov.info
-
-  release:
-    needs: main
-    runs-on: ubuntu-latest
-    if:
-      ${{ github.repository == 'milamer/parse-nested-form-data' &&
-      contains('refs/heads/main,refs/heads/beta,refs/heads/next,refs/heads/alpha',
-      github.ref) && github.event_name == 'push' }}
-    permissions:
-      contents: write # publish GitHub release
-      issues: write # comment on released issues
-      pull-requests: write # comment on released PRs
-      id-token: write # npm trusted publishing (OIDC) + provenance
-    steps:
-      - name: ⬇️ Checkout repo
-        uses: actions/checkout@v7
-
-      - name: ⎔ Setup node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: 📥 Download deps
-        run: npm ci
-        env:
-          LEFTHOOK: 0
-
-      - name: 🏗 Run build script
-        run: npm run build
-
-      - name: 🚀 Release
-        uses: cycjimmy/semantic-release-action@v8
-        with:
-          semantic_version: 25
-          branches: |
-            [
-              '+([0-9])?(.{+([0-9]),x}).x',
-              'main',
-              'next',
-              'next-major',
-              {name: 'beta', prerelease: true},
-              {name: 'alpha', prerelease: true}
-            ]
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

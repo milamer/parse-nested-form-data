@@ -1,0 +1,67 @@
+name: release
+# Manual only: Actions → release → "Run workflow", pick the branch to release
+# from. semantic-release derives the version from every commit since the
+# branch's last release tag, so batching several merges into one run is fine.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (only report the next version, publish nothing)
+        type: boolean
+        default: false
+
+# never run two releases at once, and never cancel one mid-publish
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: ${{ github.repository == 'milamer/parse-nested-form-data' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push tag + publish GitHub release
+      issues: write # comment on released issues
+      pull-requests: write # comment on released PRs
+      id-token: write # npm trusted publishing (OIDC) + provenance
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history + tags for commit analysis
+
+      - name: ⎔ Setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 📥 Download deps
+        run: npm ci
+        env:
+          LEFTHOOK: 0
+
+      # full gate (includes the build) so nothing unvalidated is published
+      - name: ▶️ Run validate script
+        run: npm run validate
+
+      - name: 🚀 Release
+        uses: cycjimmy/semantic-release-action@v8
+        with:
+          semantic_version: 25
+          dry_run: ${{ inputs.dry_run }}
+          branches: |
+            [
+              '+([0-9])?(.{+([0-9]),x}).x',
+              'main',
+              'next',
+              'next-major',
+              {name: 'beta', prerelease: true},
+              {name: 'alpha', prerelease: true}
+            ]
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
