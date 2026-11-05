@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "pedantic": "error"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "max-lines": "off",
+    "max-lines-per-function": "off",
+    "max-classes-per-file": "off",
+    "no-inline-comments": "off",
+    "require-unicode-regexp": "off",
+    "typescript/prefer-readonly-parameter-types": "off",
+    "typescript/strict-void-return": "off"
+  },
+  "ignorePatterns": ["dist", "coverage"],
+  "overrides": [
+    {
+      "files": ["scripts/**"],
+      "rules": {
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off"
+      }
+    }
+  ]
+}

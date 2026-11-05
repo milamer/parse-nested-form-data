@@ -1,3 +1,4 @@
+import {afterEach, describe, expect, it} from 'vitest'
 import {FormData} from '@remix-run/web-form-data'
 import {File} from '@remix-run/web-file'
 import {
@@ -252,23 +253,19 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('foo', 'test1')
     formData.append('foo', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
-      new DuplicateKeyError('foo'),
-    )
+    expect(() => parseFormData(formData)).toThrow(new DuplicateKeyError('foo'))
   })
   it('throws if value is already set `foo, foo[] -> throw DuplicateKeyError("foo[]")`', () => {
     const formData = new FormData()
     formData.append('foo', 'test1')
     formData.append('foo[]', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
-      new DuplicateKeyError('foo'),
-    )
+    expect(() => parseFormData(formData)).toThrow(new DuplicateKeyError('foo'))
   })
   it('throws if value is already set `foo[], foo.bar -> throw DuplicateKeyError("foo")`', () => {
     const formData = new FormData()
     formData.append('foo[]', 'test1')
     formData.append('foo.bar', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new DuplicateKeyError('foo.bar'),
     )
   })
@@ -276,7 +273,7 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('foo[0]', 'test1')
     formData.append('foo[0]', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new DuplicateKeyError('foo[0]'),
     )
   })
@@ -284,7 +281,7 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('foo[0]', 'test1')
     formData.append('foo[0].bar', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new DuplicateKeyError('foo[0]'),
     )
   })
@@ -292,7 +289,7 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('foo[0].1', 'test1')
     formData.append('foo[0][1]', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new DuplicateKeyError('foo[0][1]'),
     )
   })
@@ -300,15 +297,13 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('-foo', 'test1')
     formData.append('foo.bar', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
-      new DuplicateKeyError('foo'),
-    )
+    expect(() => parseFormData(formData)).toThrow(new DuplicateKeyError('foo'))
   })
   it('throws if value is already set `-foo[0], foo[0] -> throw DuplicateKeyError("foo")`', () => {
     const formData = new FormData()
     formData.append('-foo[0]', 'test1')
     formData.append('foo[0][]', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new DuplicateKeyError('foo[0]'),
     )
   })
@@ -316,7 +311,7 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('foo.file', new File([''], 'test.txt'))
     formData.append('foo.file.test', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new DuplicateKeyError('foo.file'),
     )
   })
@@ -324,7 +319,7 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('foo[0]', new File([''], 'test.txt'))
     formData.append('foo[0].file', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new DuplicateKeyError('foo[0]'),
     )
   })
@@ -332,17 +327,13 @@ describe('errors', () => {
     const formData = new FormData()
     formData.append('foo[]', 'test1')
     formData.append('foo[0]', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
-      new MixedArrayError('foo[0]'),
-    )
+    expect(() => parseFormData(formData)).toThrow(new MixedArrayError('foo[0]'))
   })
   it('throws if ordered and unordered arrays are mixed `foo[0], foo[] -> thow MixedArrayError(foo[])`', () => {
     const formData = new FormData()
     formData.append('foo[0]', 'test1')
     formData.append('foo[]', 'test2')
-    expect(() => parseFormData(formData)).toThrowError(
-      new MixedArrayError('foo[]'),
-    )
+    expect(() => parseFormData(formData)).toThrow(new MixedArrayError('foo[]'))
   })
 })
 
@@ -416,44 +407,44 @@ describe('complex examples', () => {
 })
 
 describe('prototype pollution protection', () => {
-  const proto = Object.prototype as unknown as {[key: string]: unknown}
+  const proto: object = Object.prototype
   afterEach(() => {
     // Defensive: clean any test-leaked properties off Object.prototype so a
     // failure can't silently affect later tests.
-    delete proto.polluted
+    Reflect.deleteProperty(proto, 'polluted')
   })
 
   it('rejects `__proto__` as a top-level key', () => {
     const formData = new FormData()
     formData.append('__proto__.polluted', 'yes')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new ForbiddenKeyError('__proto__'),
     )
-    expect(proto.polluted).toBeUndefined()
+    expect(Reflect.get(proto, 'polluted')).toBeUndefined()
   })
 
   it('rejects `__proto__` as a nested key', () => {
     const formData = new FormData()
     formData.append('a.__proto__.polluted', 'yes')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new ForbiddenKeyError('a.__proto__'),
     )
-    expect(proto.polluted).toBeUndefined()
+    expect(Reflect.get(proto, 'polluted')).toBeUndefined()
   })
 
   it('rejects `__proto__` reached through an array element', () => {
     const formData = new FormData()
     formData.append('a[0].__proto__.polluted', 'yes')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new ForbiddenKeyError('a[0].__proto__'),
     )
-    expect(proto.polluted).toBeUndefined()
+    expect(Reflect.get(proto, 'polluted')).toBeUndefined()
   })
 
   it('rejects `constructor` as a key', () => {
     const formData = new FormData()
     formData.append('constructor.prototype.polluted', 'yes')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new ForbiddenKeyError('constructor'),
     )
   })
@@ -461,7 +452,7 @@ describe('prototype pollution protection', () => {
   it('rejects `prototype` as a key', () => {
     const formData = new FormData()
     formData.append('prototype.polluted', 'yes')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new ForbiddenKeyError('prototype'),
     )
   })
@@ -469,7 +460,7 @@ describe('prototype pollution protection', () => {
   it('rejects `__proto__` as a leaf assignment', () => {
     const formData = new FormData()
     formData.append('a.__proto__', 'yes')
-    expect(() => parseFormData(formData)).toThrowError(
+    expect(() => parseFormData(formData)).toThrow(
       new ForbiddenKeyError('a.__proto__'),
     )
   })
@@ -481,13 +472,15 @@ describe('prototype pollution protection', () => {
   // regex is ever loosened to accept arbitrary content inside `[...]`, these
   // tests will start failing and the array branch will need its own
   // forbidden-key check.
+  // NOTE: `a[name]` is not a supported path yet (see issue #2), so this
+  // currently fails as a DuplicateKeyError before the forbidden-key check runs.
   it.each(['__proto__', 'constructor', 'prototype'])(
     'does not pollute via `a[%s]`',
     key => {
       const formData = new FormData()
       formData.append(`a[${key}]`, 'yes')
-      expect(() => parseFormData(formData)).toThrow()
-      expect(proto.polluted).toBeUndefined()
+      expect(() => parseFormData(formData)).toThrow(DuplicateKeyError)
+      expect(Reflect.get(proto, 'polluted')).toBeUndefined()
     },
   )
 })
