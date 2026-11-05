@@ -3,7 +3,6 @@ coverage
 dist
 .DS_Store
 
-# these cause more harm than good
-# when working with contributors
-package-lock.json
+# npm is the package manager for this repo
 yarn.lock
+pnpm-lock.yaml
