@@ -10,38 +10,49 @@ on:
       - 'alpha'
       - '!all-contributors/**'
   pull_request: {}
+
+# cancel superseded runs of the same branch / PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   main:
     # ignore all-contributors PRs
     if: ${{ !contains(github.head_ref, 'all-contributors') }}
     strategy:
+      fail-fast: false
       matrix:
-        node: [14, 16]
+        node: [22, 24, 26]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # codecov OIDC upload
     steps:
-      - name: 🛑 Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.9.0
-
       - name: ⬇️ Checkout repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
 
       - name: ⎔ Setup node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
 
       - name: 📥 Download deps
-        uses: bahmutov/npm-install@v1
-        with:
-          useLockFile: false
+        run: npm install
         env:
-          HUSKY_SKIP_INSTALL: true
+          LEFTHOOK: 0
 
       - name: ▶️ Run validate script
         run: npm run validate
 
       - name: ⬆️ Upload coverage report
-        uses: codecov/codecov-action@v1
+        if: ${{ matrix.node == 24 }}
+        uses: codecov/codecov-action@v7
+        with:
+          use_oidc: true
 
   release:
     needs: main
@@ -50,32 +61,32 @@ jobs:
       ${{ github.repository == 'milamer/parse-nested-form-data' &&
       contains('refs/heads/main,refs/heads/beta,refs/heads/next,refs/heads/alpha',
       github.ref) && github.event_name == 'push' }}
+    permissions:
+      contents: write # publish GitHub release
+      issues: write # comment on released issues
+      pull-requests: write # comment on released PRs
+      id-token: write # npm trusted publishing (OIDC) + provenance
     steps:
-      - name: 🛑 Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.9.0
-
       - name: ⬇️ Checkout repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
 
       - name: ⎔ Setup node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v7
         with:
-          node-version: 14
+          node-version: 24
 
       - name: 📥 Download deps
-        uses: bahmutov/npm-install@v1
-        with:
-          useLockFile: false
+        run: npm install
         env:
-          HUSKY_SKIP_INSTALL: true
+          LEFTHOOK: 0
 
       - name: 🏗 Run build script
         run: npm run build
 
       - name: 🚀 Release
-        uses: cycjimmy/semantic-release-action@v3
+        uses: cycjimmy/semantic-release-action@v8
         with:
-          semantic_version: 17
+          semantic_version: 25
           branches: |
             [
               '+([0-9])?(.{+([0-9]),x}).x',
