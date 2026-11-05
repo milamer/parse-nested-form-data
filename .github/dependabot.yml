@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # let fresh releases settle before adopting them (supply-chain safety)
+    cooldown:
+      default-days: 7
+    # `build` commits don't trigger a semantic-release publish
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      # one PR for all non-breaking updates; majors get their own PRs
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']
