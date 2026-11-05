@@ -1,0 +1,65 @@
+name: commitlint
+# Same commitlint config as the local commit-msg hook.
+#
+# - `title` (make this a required check): a squash merge uses the PR title as
+#   the commit message, which is what semantic-release reads.
+# - `commits` (informational, not required): a rebase merge puts every commit
+#   on main. Green = commits are clean, rebase-merge is fine; red = squash.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v7
+
+      - name: ⎔ Setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 📥 Download deps
+        run: npm ci
+        env:
+          LEFTHOOK: 0
+
+      - name: 📝 Lint PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
+
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need the PR's commits and the base
+
+      - name: ⎔ Setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 📥 Download deps
+        run: npm ci
+        env:
+          LEFTHOOK: 0
+
+      - name: 📝 Lint PR commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npx commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
