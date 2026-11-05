@@ -9,5 +9,5 @@
   "skipCi": false,
   "files": ["README.md"],
   "contributors": [],
-  "commitConvention": "none"
+  "commitConvention": "angular"
 }

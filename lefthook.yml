@@ -11,3 +11,8 @@ pre-commit:
     - name: typecheck
       glob: '*.{ts,mts,cts}'
       run: npx tsc -p .
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: npx commitlint --edit {1}

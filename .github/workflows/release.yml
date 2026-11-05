@@ -53,15 +53,10 @@ jobs:
         with:
           semantic_version: 25
           dry_run: ${{ inputs.dry_run }}
-          branches: |
-            [
-              '+([0-9])?(.{+([0-9]),x}).x',
-              'main',
-              'next',
-              'next-major',
-              {name: 'beta', prerelease: true},
-              {name: 'alpha', prerelease: true}
-            ]
+          # branches + plugins live in package.json#release. Preset v10 needs
+          # conventional-changelog-writer 9+, which semantic-release 25 lacks.
+          extra_plugins: |
+            conventional-changelog-conventionalcommits@9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
