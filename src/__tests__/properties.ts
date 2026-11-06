@@ -10,13 +10,10 @@ import {
 type Entry = [string, string]
 type Data = string | Array<Data> | {[key: string]: Data}
 
-// Keys that the parser rejects or treats specially. Every other key matching
-// `[a-z][a-z0-9_]*` must round-trip.
-const RESERVED_KEYS = new Set(Object.getOwnPropertyNames(Object.prototype))
-
-const keyArb = fc
-  .stringMatching(/^[a-z][a-z0-9_]{0,7}$/)
-  .filter(key => !RESERVED_KEYS.has(key))
+// Every key matching this pattern must round-trip. It can't produce a name
+// from Object.prototype (those are camelCase, start with `_`, or are longer),
+// so no rejected key is generated. Rejected keys are tested in `known bugs`.
+const keyArb = fc.stringMatching(/^[a-z][a-z0-9_]{0,7}$/)
 
 // Containers are never empty: an empty object or array produces no entries,
 // so it can't survive the round trip.
@@ -26,10 +23,18 @@ const {data: dataArb} = fc.letrec<{data: Data; leaf: Data}>(tie => ({
     {depthSize: 'small', withCrossShrink: true},
     tie('leaf'),
     fc.array(tie('data'), {minLength: 1, maxLength: 4}),
-    fc.dictionary(keyArb, tie('data'), {minKeys: 1, maxKeys: 4}),
+    fc.dictionary(keyArb, tie('data'), {
+      minKeys: 1,
+      maxKeys: 4,
+      noNullPrototype: true,
+    }),
   ),
 }))
-const rootArb = fc.dictionary(keyArb, dataArb, {minKeys: 1, maxKeys: 4})
+const rootArb = fc.dictionary(keyArb, dataArb, {
+  minKeys: 1,
+  maxKeys: 4,
+  noNullPrototype: true,
+})
 
 function toEntries(path: string, data: Data): Array<Entry> {
   if (typeof data === 'string') return [[path, data]]
@@ -87,7 +92,7 @@ describe('properties', () => {
   it('round-trips nested data through dot and `[i]` paths', () => {
     fc.assert(
       fc.property(rootArb, root => {
-        expect(parseFormData(toEntries('', root))).toEqual(root)
+        expect(parseFormData(toEntries('', root))).toStrictEqual(root)
       }),
     )
   })
@@ -95,7 +100,7 @@ describe('properties', () => {
   it('parses ordered array entries independent of their order', () => {
     fc.assert(
       fc.property(rootWithShuffledEntriesArb, ([root, entries]) => {
-        expect(parseFormData(entries)).toEqual(root)
+        expect(parseFormData(entries)).toStrictEqual(root)
       }),
     )
   })
@@ -127,21 +132,27 @@ describe('properties', () => {
           value,
         ])
         const expected = items.map(([, value]) => value)
-        expect(parseFormData(entries)).toEqual({a: expected})
+        expect(parseFormData(entries)).toStrictEqual({a: expected})
       }),
     )
   })
 
   it('never adds properties to Object.prototype', () => {
-    const before = Object.getOwnPropertyNames(Object.prototype)
+    const before = new Set(Object.getOwnPropertyNames(Object.prototype))
     fc.assert(
       fc.property(entriesArb(tokenPathArb), entries => {
         try {
           parseFormData(entries)
         } catch {
           // Errors are fine here; only pollution matters.
+        } finally {
+          // Remove anything that leaked so it can't break later tests.
+          const added = Object.getOwnPropertyNames(Object.prototype).filter(
+            key => !before.has(key),
+          )
+          for (const key of added) Reflect.deleteProperty(Object.prototype, key)
+          expect(added).toStrictEqual([])
         }
-        expect(Object.getOwnPropertyNames(Object.prototype)).toEqual(before)
       }),
     )
   })
@@ -165,13 +176,11 @@ describe('properties', () => {
 // so these fail on every run instead of depending on the random seed.
 describe('known bugs', () => {
   it.fails('parses a single large array index quickly', () => {
-    // Checked from small to large, so today the test stops after ~1 s at the
-    // first index instead of spending minutes on the last one.
-    for (const index of [10_000_000, 4_294_967_294]) {
-      const start = performance.now()
-      expect(parseFormData([[`a[${index}]`, '1']])).toEqual({a: ['1']})
-      expect(performance.now() - start).toBeLessThan(100)
-    }
+    // Takes ~650 ms today. A larger index would take minutes, and the test
+    // can't time out because the parse is synchronous.
+    const start = performance.now()
+    expect(parseFormData([['a[10000000]', '1']])).toStrictEqual({a: ['1']})
+    expect(performance.now() - start).toBeLessThan(100)
   })
 
   it.fails('parses 200 000 ordered array entries', () => {
