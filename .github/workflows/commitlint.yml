@@ -40,6 +40,12 @@ jobs:
         run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
 
   commits:
+    # - `edited` only changes the title, which the `title` job covers
+    # - Dependabot bodies carry >100-char compare URLs that always fail
+    #   body-max-line-length; its PR title is still linted above
+    if: >-
+      ${{ github.event.action != 'edited' &&
+      github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout repo
