@@ -182,11 +182,22 @@ describe('known bugs', () => {
     expect(parseFormData(entries).a).toHaveLength(200_000)
   })
 
-  it.fails('round-trips keys that exist on Object.prototype', () => {
-    const keys = Object.getOwnPropertyNames(Object.prototype).filter(
-      key => !['__proto__', 'constructor', 'prototype'].includes(key),
-    )
-    const entries = keys.map((key): Entry => [key, 'x'])
-    expect(parseFormData(entries)).toEqual(Object.fromEntries(entries))
+  // Fields with these names would shadow built-in methods on the parsed
+  // object (e.g. `hasOwnProperty`), so they are rejected. Today most of them
+  // throw a misleading DuplicateKeyError instead.
+  it.fails('rejects keys that exist on Object.prototype with ForbiddenKeyError', () => {
+    const keys = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
+    for (const key of keys) {
+      const cases: Array<[path: string, errorKey: string]> = [
+        [key, key],
+        [`a.${key}`, `a.${key}`],
+        [`${key}.a`, key],
+      ]
+      for (const [path, errorKey] of cases) {
+        expect(() => parseFormData([[path, 'x']])).toThrow(
+          new ForbiddenKeyError(errorKey),
+        )
+      }
+    }
   })
 })
