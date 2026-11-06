@@ -1,0 +1,78 @@
+name: commitlint
+# Same commitlint config as the local commit-msg hook.
+#
+# - `title` (make this a required check): a squash merge uses the PR title as
+#   the commit message, which is what semantic-release reads.
+# - `commits` (informational, not required): a rebase merge puts every commit
+#   on main. Green = commits are clean, rebase-merge is fine; red = squash.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+# Title/body edits get their own group: otherwise an `edited` run would cancel
+# an in-flight push run, and its replacement skips `commits`, leaving that
+# check cancelled instead of reporting a result.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'edited'
+    && 'edit' || 'push' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⎔ Setup node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 📥 Download deps
+        run: npm ci --ignore-scripts
+
+      - name: 📝 Lint PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
+
+  commits:
+    # - `edited` only changes the title, which the `title` job covers
+    # - Dependabot bodies carry >100-char compare URLs that always fail
+    #   body-max-line-length; its PR title is still linted above. Keyed on the
+    #   PR author, not `github.actor`: the commits stay Dependabot's even when
+    #   a maintainer pushes to the PR (validate.yml's coverage job uses
+    #   `github.actor` on purpose, as OIDC follows the triggering actor)
+    if: >-
+      ${{ github.event.action != 'edited' &&
+      github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need the PR's commits and the base
+          persist-credentials: false
+
+      - name: ⎔ Setup node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 📥 Download deps
+        run: npm ci --ignore-scripts
+
+      - name: 📝 Lint PR commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npx commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose

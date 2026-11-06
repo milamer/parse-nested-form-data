@@ -7,8 +7,11 @@ Please fill out this template with all the relevant information so we can
 understand what's going on and fix the issue.
 
 I'll probably ask you to submit the fix (after giving some direction). If you've
-never done that before, that's great! Check this free short video tutorial to
-learn how: https://kcd.im/pull-request
+never done that before, that's great! CONTRIBUTING.md explains how to set up the
+project and open a pull request.
+
+Please report security vulnerabilities privately as described in SECURITY.md,
+not in a public issue.
 -->
 
 - `node` version:

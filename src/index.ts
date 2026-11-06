@@ -247,7 +247,7 @@ export type ParseFormDataOptions = {
 type PathPart = {
   path: string
   type: 'object' | 'array'
-  default: {} | []
+  default: JsonObject | JsonArray
   pathToPart: string
 }
 /**
@@ -290,6 +290,8 @@ function extractPathParts(path: string): Array<PathPart> {
 
   return Array.from(path.matchAll(re)).map<PathPart>(match => {
     // self casted RegexExpMatchArray to custom
+    // The regex guarantees exactly one of `array` / `pathPart` is set.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     const typedMatch = match as unknown as [string, string] &
       RegExpExecArray & {
         groups:

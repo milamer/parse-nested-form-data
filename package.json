@@ -2,52 +2,68 @@
   "name": "parse-nested-form-data",
   "version": "1.0.0",
   "description": "A tiny node module for parsing FormData by name into objects and arrays",
-  "main": "dist/parse-nested-form-data.cjs.js",
-  "module": "dist/parse-nested-form-data.esm.js",
-  "types": "dist/index.d.ts",
   "keywords": [
     "FormData",
-    "parse",
-    "nested",
-    "form",
     "array",
+    "form",
+    "nested",
     "object",
     "parse"
   ],
-  "author": "Christian Schurr <chris@schurr.dev>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/milamer/parse-nested-form-data"
-  },
+  "homepage": "https://github.com/milamer/parse-nested-form-data#readme",
   "bugs": {
     "url": "https://github.com/milamer/parse-nested-form-data/issues"
   },
-  "homepage": "https://github.com/milamer/parse-nested-form-data#readme",
+  "license": "MIT",
+  "author": "Christian Schurr <chris@schurr.dev>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/milamer/parse-nested-form-data.git"
+  },
   "files": [
     "dist"
   ],
+  "sideEffects": false,
+  "main": "dist/parse-nested-form-data.cjs.js",
+  "module": "dist/parse-nested-form-data.esm.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "clean": "rimraf dist coverage node_modules",
-    "build:toc": "npx doctoc .",
-    "build": "kcd-scripts build --bundle --environment BUILD_NAME:parseNestedFormData",
-    "lint": "kcd-scripts lint",
-    "setup": "npm install && npm run validate -s",
-    "test": "kcd-scripts test",
-    "typecheck": "kcd-scripts typecheck",
-    "test:update": "npm test -- --updateSnapshot --coverage",
-    "validate": "kcd-scripts validate"
-  },
-  "dependencies": {
-    "@babel/runtime": "^7.19.0"
+    "clean": "node -e \"for (const d of ['dist','coverage']) require('fs').rmSync(d,{recursive:true,force:true})\"",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsdown",
+    "build:toc": "doctoc README.md && oxfmt README.md",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint --type-aware --deny-warnings",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "knip": "knip",
+    "check:package": "publint && attw --pack .",
+    "size": "size-limit",
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run test:dist && npm run check:package && npm run size && npm run knip",
+    "prepare": "lefthook install",
+    "test:dist": "node scripts/smoke-dist.mjs"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
     "@remix-run/web-file": "^3.0.2",
     "@remix-run/web-form-data": "^3.0.3",
-    "@types/minimatch": "^3.0.5",
-    "kcd-scripts": "^12.3.0",
-    "rimraf": "^3.0.2",
-    "typescript": "^4.8.4"
+    "@size-limit/preset-small-lib": "^14.3.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "doctoc": "^2.5.0",
+    "knip": "^6.44.1",
+    "lefthook": "^2.2.2",
+    "oxfmt": "^0.76.0",
+    "oxlint": "^1.91.0",
+    "oxlint-tsgolint": "^7.0.2006",
+    "publint": "^0.3.25",
+    "size-limit": "^14.3.0",
+    "tsdown": "^0.23.5",
+    "typescript": "7.0.2",
+    "vitest": "^5.1.0"
   },
   "peerDependencies": {
     "@remix-run/web-file": ">=3.0.0"
@@ -57,22 +73,56 @@
       "optional": true
     }
   },
-  "eslintConfig": {
-    "extends": "./node_modules/kcd-scripts/eslint.js",
-    "rules": {
-      "import/extensions": "off",
-      "max-lines-per-function": "off",
-      "one-var": [
-        "error",
-        "never"
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "release": {
+    "branches": [
+      "+([0-9]).x",
+      "+([0-9]).+([0-9]).x",
+      "main"
+    ],
+    "plugins": [
+      [
+        "@semantic-release/commit-analyzer",
+        {
+          "preset": "conventionalcommits"
+        }
       ],
-      "@typescript-eslint/no-unsafe-assignment": "off",
-      "@typescript-eslint/no-loop-func": "off"
+      [
+        "@semantic-release/release-notes-generator",
+        {
+          "preset": "conventionalcommits"
+        }
+      ],
+      [
+        "@semantic-release/npm",
+        {
+          "npmPublish": false
+        }
+      ],
+      [
+        "@semantic-release/exec",
+        {
+          "publishCmd": "npm stage publish --tag ${nextRelease.channel ? 'release-' + nextRelease.channel : 'latest'}"
+        }
+      ],
+      "@semantic-release/github"
+    ]
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11.19.1",
+      "onFail": "error"
     }
   },
-  "eslintIgnore": [
-    "node_modules",
-    "coverage",
-    "dist"
-  ]
+  "packageManager": "npm@11.19.1+sha512.cedb312b1b7f92421a02cfb68b4194e88f8346651dacd6acc5364a25ef5309d4a32b19616a1ff8aff865e7280c0fa5c0835a99f5cd93368991e2a80ec9da75d2",
+  "allowScripts": {
+    "lefthook": false,
+    "@tybys/wasm-util": false,
+    "fsevents": false
+  }
 }

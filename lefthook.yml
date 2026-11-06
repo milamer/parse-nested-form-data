@@ -1,0 +1,18 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: format
+      glob: '*.{js,mjs,cjs,ts,mts,cts,json,jsonc,md,yml,yaml}'
+      run: npx oxfmt --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+    - name: lint
+      glob: '*.{js,mjs,cjs,ts,mts,cts}'
+      run: npx oxlint --type-aware --deny-warnings {staged_files}
+    - name: typecheck
+      glob: '*.{ts,mts,cts}'
+      run: npx tsc -p .
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: npx commitlint --edit {1}

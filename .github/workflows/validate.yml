@@ -1,90 +1,125 @@
 name: validate
 on:
   push:
+    # same branches as package.json#release
     branches:
-      - '+([0-9])?(.{+([0-9]),x}).x'
       - 'main'
-      - 'next'
-      - 'next-major'
-      - 'beta'
-      - 'alpha'
-      - '!all-contributors/**'
+      # maintenance branches (1.x, 1.2.x); GitHub's filter syntax, not micromatch
+      - '[0-9]+.x'
+      - '[0-9]+.[0-9]+.x'
   pull_request: {}
+
+# cancel superseded PR runs; let push runs finish so every commit gets a result
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   main:
     # ignore all-contributors PRs
     if: ${{ !contains(github.head_ref, 'all-contributors') }}
     strategy:
+      fail-fast: false
       matrix:
-        node: [14, 16]
+        node: [22, 24, 26]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: 🛑 Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.9.0
-
       - name: ⬇️ Checkout repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: ⎔ Setup node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
+          # setup-node's cache runs `npm config get cache`, which Node 22's
+          # bundled npm 10 fails (devEngines) before corepack can swap it, so
+          # Node 22 runs uncached. Both keys are needed: packageManager in
+          # package.json turns the cache on by default.
+          cache: ${{ matrix.node != 22 && 'npm' || '' }}
+          package-manager-cache: ${{ matrix.node != 22 }}
 
-      - name: 📥 Download deps
-        uses: bahmutov/npm-install@v1
-        with:
-          useLockFile: false
+      # Node 22 bundles npm 10, which lacks allowScripts / min-release-age and
+      # fails devEngines. Corepack (bundled with 22) runs the npm pinned in
+      # package.json#packageManager and verifies its sha512. Node 24/26 bundle
+      # a new enough npm, so they skip this.
+      - name: 📦 Use pinned npm
+        if: ${{ matrix.node == 22 }}
+        run: corepack enable npm && npm --version
         env:
-          HUSKY_SKIP_INSTALL: true
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+
+      # no dependency (or root) lifecycle scripts in CI; nothing here needs them
+      - name: 📥 Download deps
+        run: npm ci --ignore-scripts
 
       - name: ▶️ Run validate script
         run: npm run validate
 
-      - name: ⬆️ Upload coverage report
-        uses: codecov/codecov-action@v1
+      - name: 📦 Upload coverage artifact
+        if: ${{ matrix.node == 24 }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 1
 
-  release:
+  # Separate job so the OIDC permission never sits next to dependency code:
+  # it installs nothing, only hands the report from `main` to Codecov.
+  #
+  # Fork and Dependabot PRs get no OIDC token, so the upload would fail there.
+  # Skipping it is safe: `test:coverage` in `main` already enforces 100%.
+  coverage:
     needs: main
-    runs-on: ubuntu-latest
-    if:
+    # Push runs (main, N.x) give Codecov the base that PR coverage is compared
+    # against; forks' pushes are skipped since they have no Codecov project.
+    # `github.actor`, not the PR author: GitHub withholds OIDC based on who
+    # triggered the run, so a maintainer pushing to a Dependabot PR still
+    # uploads.
+    if: >-
       ${{ github.repository == 'milamer/parse-nested-form-data' &&
-      contains('refs/heads/main,refs/heads/beta,refs/heads/next,refs/heads/alpha',
-      github.ref) && github.event_name == 'push' }}
+      (github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # codecov OIDC upload
     steps:
-      - name: 🛑 Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.9.0
-
+      # codecov reads commit metadata from the checkout
       - name: ⬇️ Checkout repo
-        uses: actions/checkout@v2
-
-      - name: ⎔ Setup node
-        uses: actions/setup-node@v2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 14
+          persist-credentials: false
 
-      - name: 📥 Download deps
-        uses: bahmutov/npm-install@v1
+      - name: 📥 Download coverage artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          useLockFile: false
-        env:
-          HUSKY_SKIP_INSTALL: true
+          name: coverage
+          path: coverage
 
-      - name: 🏗 Run build script
-        run: npm run build
-
-      - name: 🚀 Release
-        uses: cycjimmy/semantic-release-action@v3
+      - name: ⬆️ Upload coverage report
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          semantic_version: 17
-          branches: |
-            [
-              '+([0-9])?(.{+([0-9]),x}).x',
-              'main',
-              'next',
-              'next-major',
-              {name: 'beta', prerelease: true},
-              {name: 'alpha', prerelease: true}
-            ]
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          use_oidc: true
+          files: coverage/lcov.info
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔎 Lint GitHub workflows
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color

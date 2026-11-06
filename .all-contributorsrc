@@ -7,9 +7,7 @@
   "repoHost": "https://github.com",
   "repoType": "github",
   "skipCi": false,
-  "files": [
-    "README.md"
-  ],
+  "files": ["README.md"],
   "contributors": [],
-  "commitConvention": "none"
+  "commitConvention": "angular"
 }

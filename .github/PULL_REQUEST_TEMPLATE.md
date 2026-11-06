@@ -7,8 +7,8 @@ this project (found in the CODE_OF_CONDUCT.md file).
 Also, please make sure you're familiar with and follow the instructions in the
 contributing guidelines (found in the CONTRIBUTING.md file).
 
-If you're new to contributing to open source projects, you might find this free
-video course helpful: https://kcd.im/pull-request
+The PR title must follow Conventional Commits (e.g. `fix: handle empty keys`),
+because a squash merge uses it as the commit message that decides the release.
 
 Please fill out the information below to expedite the review and (hopefully)
 merge of your pull request!
@@ -35,7 +35,10 @@ merge of your pull request!
 
 - [ ] Documentation
 - [ ] Tests
+- [ ] `npm run validate` passes
+
+<!-- In your opinion, is this ready to be merged as soon as it's reviewed? -->
+
 - [ ] Ready to be merged
-      <!-- In your opinion, is this ready to be merged as soon as it's reviewed? -->
 
 <!-- feel free to add additional comments -->

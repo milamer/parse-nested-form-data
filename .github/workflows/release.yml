@@ -1,0 +1,126 @@
+name: release
+# Manual only: Actions → release → "Run workflow", pick the branch to release
+# from. semantic-release derives the version from every commit since the
+# branch's last release tag, so batching several merges into one run is fine.
+#
+# Staged publishing: the run only *stages* the new version on npm (the trusted
+# publisher has "allow npm publish" off). It goes live after a maintainer
+# approves it with 2FA: `npm stage list`, then `npm stage approve <id>`. The
+# git tag and GitHub release are created by the run, before that approval.
+#
+# Two jobs so no dependency code ever runs next to publish credentials:
+# - `validate` installs deps, runs the full gate and builds dist (read-only).
+# - `release` gets write + OIDC permissions but installs nothing from the
+#   lockfile; it only publishes the dist built by `validate`.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (only report the next version, publish nothing)
+        type: boolean
+        default: false
+
+# never run two releases at once, and never cancel one mid-publish
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: ${{ github.repository == 'milamer/parse-nested-form-data' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⎔ Setup node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 📥 Download deps
+        run: npm ci --ignore-scripts
+
+      # full gate (includes the build) so nothing unvalidated is published
+      - name: ▶️ Run validate script
+        run: npm run validate
+
+      - name: 📦 Upload dist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: validate
+    # Protected environment, deployable only from main, N.x and N.N.x (and
+    # only admins may create those branches). The npm trusted publisher is
+    # bound to this environment, so a run from any other branch, e.g. a
+    # feature branch with an edited copy of this file, can't even stage.
+    environment: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push tag + publish GitHub release
+      issues: write # comment on released issues
+      pull-requests: write # comment on released PRs
+      id-token: write # npm trusted publishing (OIDC) + provenance
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history + tags for commit analysis
+          # semantic-release authenticates its tag push with GITHUB_TOKEN
+          persist-credentials: false
+
+      # no cache: nothing is installed from the lockfile in this job. Must be
+      # explicit, packageManager/devEngines in package.json turn it on by default
+      - name: ⎔ Setup node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: 📥 Download dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      # `npm stage publish` runs `prepare` (lefthook install) even with
+      # ignore-scripts, and lefthook isn't installed here. Consumers don't need
+      # it either, so drop it from the published package.json.
+      - name: ✂️ Drop dev-only prepare script
+        run: npm pkg delete scripts.prepare
+
+      - name: 🚀 Release
+        uses: cycjimmy/semantic-release-action@ad51787758d9654d5a75150a89a6fa9b3ccef95e # v8.1.4
+        with:
+          # Exact versions: these are installed here, next to the publish
+          # credentials, outside the lockfile and .npmrc policies. Bump by hand.
+          semantic_version: 25.0.9
+          dry_run: ${{ inputs.dry_run }}
+          # branches + plugins live in package.json#release. Preset v10 needs
+          # conventional-changelog-writer 9+, which semantic-release 25 lacks.
+          # exec runs `npm stage publish`: @semantic-release/npm has no staged
+          # publishing (semantic-release/npm#1160), so there it only sets the
+          # version (`npmPublish: false`).
+          extra_plugins: |
+            conventional-changelog-conventionalcommits@9.3.1
+            @semantic-release/exec@7.1.0
+        # No NPM_TOKEN: npm stages via trusted publishing, authenticating with
+        # this job's OIDC token (`id-token: write`) bound to the `release`
+        # environment, so there is no long-lived npm credential to leak.
+        # With `npmPublish: false` a dry run no longer checks npm auth; the
+        # first real run does, by staging.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

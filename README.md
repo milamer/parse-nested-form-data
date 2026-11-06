@@ -297,8 +297,8 @@ parseFormData(formData, {
 
 ## Issues
 
-_Looking to contribute? Look for the [Good First Issue][good-first-issue]
-label._
+_Looking to contribute? Look for the [Good First Issue][good-first-issue] label,
+and see [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up the project._
 
 ### 🐛 Bugs
 
