@@ -2,6 +2,11 @@ name: release
 # Manual only: Actions → release → "Run workflow", pick the branch to release
 # from. semantic-release derives the version from every commit since the
 # branch's last release tag, so batching several merges into one run is fine.
+#
+# Two jobs so no dependency code ever runs next to publish credentials:
+# - `validate` installs deps, runs the full gate and builds dist (read-only).
+# - `release` gets write + OIDC permissions but installs nothing from the
+#   lockfile; it only publishes the dist built by `validate`.
 on:
   workflow_dispatch:
     inputs:
@@ -19,19 +24,16 @@ permissions:
   contents: read
 
 jobs:
-  release:
+  validate:
     if: ${{ github.repository == 'milamer/parse-nested-form-data' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push tag + publish GitHub release
-      issues: write # comment on released issues
-      pull-requests: write # comment on released PRs
-      id-token: write # npm trusted publishing (OIDC) + provenance
+      contents: read
     steps:
       - name: ⬇️ Checkout repo
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # full history + tags for commit analysis
+          persist-credentials: false
 
       - name: ⎔ Setup node
         uses: actions/setup-node@v7
@@ -48,8 +50,50 @@ jobs:
       - name: ▶️ Run validate script
         run: npm run validate
 
+      - name: 📦 Upload dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push tag + publish GitHub release
+      issues: write # comment on released issues
+      pull-requests: write # comment on released PRs
+      id-token: write # npm trusted publishing (OIDC) + provenance
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history + tags for commit analysis
+          # semantic-release authenticates its tag push with GITHUB_TOKEN
+          persist-credentials: false
+
+      # no cache: nothing is installed from the lockfile in this job
+      - name: ⎔ Setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 📥 Download dist
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+
+      # `npm publish` runs `prepare` (lefthook install) even with
+      # ignore-scripts, and lefthook isn't installed here. Consumers don't need
+      # it either, so drop it from the published package.json.
+      - name: ✂️ Drop dev-only prepare script
+        run: npm pkg delete scripts.prepare
+
       - name: 🚀 Release
-        uses: cycjimmy/semantic-release-action@v8
+        uses: cycjimmy/semantic-release-action@ad51787758d9654d5a75150a89a6fa9b3ccef95e # v8.1.4
         with:
           semantic_version: 25
           dry_run: ${{ inputs.dry_run }}
