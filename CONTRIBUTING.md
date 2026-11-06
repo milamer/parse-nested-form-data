@@ -30,7 +30,7 @@ npm --version # 11.19.1
 `.npmrc` enables two install policies, so adding or updating a dependency works
 a bit differently than usual:
 
-- `min-release-age=7`: npm only resolves versions published more than 7 days
+- `min-release-age=3`: npm only resolves versions published more than 3 days
   ago. If you need a version that's newer than that, wait.
 - `strict-allow-scripts=true`: the install fails if a dependency has an install
   script that isn't listed in `package.json#allowScripts`. Add new entries as
