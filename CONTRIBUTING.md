@@ -99,3 +99,13 @@ contributors don't need to change the version in `package.json`.
 The workflow only _stages_ the new version on npm. It goes live once the
 maintainer approves it with 2FA (`npm stage approve <id>`), so a compromised CI
 run can't publish to npm on its own.
+
+The git tag and the GitHub release are created _before_ that approval. If
+staging fails, or a staged version is never approved, the tag and release exist
+for a version that isn't on npm, and the next run would skip past it. To fix
+that, either approve the staged version late, or delete both so the next run
+releases that version again:
+
+```sh
+gh release delete vX.Y.Z --yes --cleanup-tag
+```
