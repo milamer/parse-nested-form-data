@@ -73,8 +73,15 @@ jobs:
 
   # Separate job so the OIDC permission never sits next to dependency code:
   # it installs nothing, only hands the report from `main` to Codecov.
+  #
+  # Fork and Dependabot PRs get no OIDC token, so the upload would fail there.
+  # Skipping it is safe: `test:coverage` in `main` already enforces 100%.
   coverage:
     needs: main
+    if: >-
+      ${{ github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
