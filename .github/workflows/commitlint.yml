@@ -9,8 +9,13 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+# Title/body edits get their own group: otherwise an `edited` run would cancel
+# an in-flight push run, and its replacement skips `commits`, leaving that
+# check cancelled instead of reporting a result.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: >-
+    ${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'edited'
+    && 'edit' || 'push' }}
   cancel-in-progress: true
 
 permissions:
