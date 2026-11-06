@@ -95,12 +95,14 @@ jobs:
       - name: 🚀 Release
         uses: cycjimmy/semantic-release-action@ad51787758d9654d5a75150a89a6fa9b3ccef95e # v8.1.4
         with:
-          semantic_version: 25
+          # Exact versions: these are installed here, next to the publish
+          # credentials, outside the lockfile and .npmrc policies. Bump by hand.
+          semantic_version: 25.0.9
           dry_run: ${{ inputs.dry_run }}
           # branches + plugins live in package.json#release. Preset v10 needs
           # conventional-changelog-writer 9+, which semantic-release 25 lacks.
           extra_plugins: |
-            conventional-changelog-conventionalcommits@9
+            conventional-changelog-conventionalcommits@9.3.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
