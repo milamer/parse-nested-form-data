@@ -99,5 +99,18 @@
       "@semantic-release/npm",
       "@semantic-release/github"
     ]
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11.19.1",
+      "onFail": "error"
+    }
+  },
+  "packageManager": "npm@11.19.1+sha512.cedb312b1b7f92421a02cfb68b4194e88f8346651dacd6acc5364a25ef5309d4a32b19616a1ff8aff865e7280c0fa5c0835a99f5cd93368991e2a80ec9da75d2",
+  "allowScripts": {
+    "lefthook": false,
+    "@tybys/wasm-util": false,
+    "fsevents": false
   }
 }

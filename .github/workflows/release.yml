@@ -42,9 +42,7 @@ jobs:
           cache: npm
 
       - name: 📥 Download deps
-        run: npm ci
-        env:
-          LEFTHOOK: 0
+        run: npm ci --ignore-scripts
 
       # full gate (includes the build) so nothing unvalidated is published
       - name: ▶️ Run validate script
@@ -74,11 +72,13 @@ jobs:
           # semantic-release authenticates its tag push with GITHUB_TOKEN
           persist-credentials: false
 
-      # no cache: nothing is installed from the lockfile in this job
+      # no cache: nothing is installed from the lockfile in this job. Must be
+      # explicit, packageManager/devEngines in package.json turn it on by default
       - name: ⎔ Setup node
         uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
 
       - name: 📥 Download dist
         uses: actions/download-artifact@v8

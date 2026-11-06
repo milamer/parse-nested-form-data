@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: ⬇️ Checkout repo
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: ⎔ Setup node
         uses: actions/setup-node@v7
@@ -39,10 +41,19 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      - name: 📥 Download deps
-        run: npm ci
+      # Node 22 bundles npm 10, which lacks allowScripts / min-release-age and
+      # fails devEngines. Corepack (bundled with 22) runs the npm pinned in
+      # package.json#packageManager and verifies its sha512. Node 24/26 bundle
+      # a new enough npm, so they skip this.
+      - name: 📦 Use pinned npm
+        if: ${{ matrix.node == 22 }}
+        run: corepack enable npm && npm --version
         env:
-          LEFTHOOK: 0
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+
+      # no dependency (or root) lifecycle scripts in CI; nothing here needs them
+      - name: 📥 Download deps
+        run: npm ci --ignore-scripts
 
       - name: ▶️ Run validate script
         run: npm run validate
@@ -59,6 +70,8 @@ jobs:
     steps:
       - name: ⬇️ Checkout repo
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: 🔎 Lint GitHub workflows
         uses: docker://rhysd/actionlint:1.7.12
