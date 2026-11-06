@@ -28,7 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # codecov OIDC upload
     steps:
       - name: ⬇️ Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,8 +62,37 @@ jobs:
       - name: ▶️ Run validate script
         run: npm run validate
 
-      - name: ⬆️ Upload coverage report
+      - name: 📦 Upload coverage artifact
         if: ${{ matrix.node == 24 }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
+  # Separate job so the OIDC permission never sits next to dependency code:
+  # it installs nothing, only hands the report from `main` to Codecov.
+  coverage:
+    needs: main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # codecov OIDC upload
+    steps:
+      # codecov reads commit metadata from the checkout
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 📥 Download coverage artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage
+          path: coverage
+
+      - name: ⬆️ Upload coverage report
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
