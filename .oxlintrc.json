@@ -17,7 +17,11 @@
     "no-inline-comments": "off",
     "require-unicode-regexp": "off",
     "typescript/prefer-readonly-parameter-types": "off",
-    "typescript/strict-void-return": "off"
+    "typescript/strict-void-return": "off",
+    "vitest/expect-expect": [
+      "error",
+      {"assertFunctionNames": ["expect", "fc.assert"]}
+    ]
   },
   "ignorePatterns": ["dist", "coverage"],
   "overrides": [

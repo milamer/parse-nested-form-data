@@ -54,6 +54,7 @@
     "@size-limit/preset-small-lib": "^14.3.0",
     "@vitest/coverage-v8": "^5.1.0",
     "doctoc": "^2.5.0",
+    "fast-check": "^4.10.2",
     "knip": "^6.44.1",
     "lefthook": "^2.2.2",
     "oxfmt": "^0.76.0",
