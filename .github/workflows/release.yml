@@ -3,6 +3,11 @@ name: release
 # from. semantic-release derives the version from every commit since the
 # branch's last release tag, so batching several merges into one run is fine.
 #
+# Staged publishing: the run only *stages* the new version on npm (the trusted
+# publisher has "allow npm publish" off). It goes live after a maintainer
+# approves it with 2FA: `npm stage list`, then `npm stage approve <id>`. The
+# git tag and GitHub release are created by the run, before that approval.
+#
 # Two jobs so no dependency code ever runs next to publish credentials:
 # - `validate` installs deps, runs the full gate and builds dist (read-only).
 # - `release` gets write + OIDC permissions but installs nothing from the
@@ -58,10 +63,10 @@ jobs:
 
   release:
     needs: validate
-    # Protected environment: its deployment-branch rules (main, N.x, N.N.x)
-    # stop a dispatch from a feature branch, whose copy of this file could be
-    # edited, from ever getting these permissions. Bind the npm trusted
-    # publisher to this environment as well.
+    # Protected environment, deployable only from main, N.x and N.N.x (and
+    # only admins may create those branches). The npm trusted publisher is
+    # bound to this environment, so a run from any other branch, e.g. a
+    # feature branch with an edited copy of this file, can't even stage.
     environment: release
     runs-on: ubuntu-latest
     permissions:
@@ -91,7 +96,7 @@ jobs:
           name: dist
           path: dist
 
-      # `npm publish` runs `prepare` (lefthook install) even with
+      # `npm stage publish` runs `prepare` (lefthook install) even with
       # ignore-scripts, and lefthook isn't installed here. Consumers don't need
       # it either, so drop it from the published package.json.
       - name: ✂️ Drop dev-only prepare script
@@ -106,8 +111,16 @@ jobs:
           dry_run: ${{ inputs.dry_run }}
           # branches + plugins live in package.json#release. Preset v10 needs
           # conventional-changelog-writer 9+, which semantic-release 25 lacks.
+          # exec runs `npm stage publish`: @semantic-release/npm has no staged
+          # publishing (semantic-release/npm#1160), so there it only sets the
+          # version (`npmPublish: false`).
           extra_plugins: |
             conventional-changelog-conventionalcommits@9.3.1
+            @semantic-release/exec@7.1.0
+        # No NPM_TOKEN: npm stages via trusted publishing, authenticating with
+        # this job's OIDC token (`id-token: write`) bound to the `release`
+        # environment, so there is no long-lived npm credential to leak.
+        # With `npmPublish: false` a dry run no longer checks npm auth; the
+        # first real run does, by staging.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

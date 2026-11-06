@@ -96,7 +96,18 @@
           "preset": "conventionalcommits"
         }
       ],
-      "@semantic-release/npm",
+      [
+        "@semantic-release/npm",
+        {
+          "npmPublish": false
+        }
+      ],
+      [
+        "@semantic-release/exec",
+        {
+          "publishCmd": "npm stage publish --tag ${nextRelease.channel ? 'release-' + nextRelease.channel : 'latest'}"
+        }
+      ],
       "@semantic-release/github"
     ]
   },
