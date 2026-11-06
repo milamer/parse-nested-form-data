@@ -78,10 +78,16 @@ jobs:
   # Skipping it is safe: `test:coverage` in `main` already enforces 100%.
   coverage:
     needs: main
+    # Push runs (main, N.x) give Codecov the base that PR coverage is compared
+    # against; forks' pushes are skipped since they have no Codecov project.
+    # `github.actor`, not the PR author: GitHub withholds OIDC based on who
+    # triggered the run, so a maintainer pushing to a Dependabot PR still
+    # uploads.
     if: >-
-      ${{ github.event_name == 'push' ||
+      ${{ github.repository == 'milamer/parse-nested-form-data' &&
+      (github.event_name == 'push' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor != 'dependabot[bot]') }}
+      github.actor != 'dependabot[bot]')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
