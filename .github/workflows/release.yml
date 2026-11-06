@@ -58,6 +58,11 @@ jobs:
 
   release:
     needs: validate
+    # Protected environment: its deployment-branch rules (main, N.x, N.N.x)
+    # stop a dispatch from a feature branch, whose copy of this file could be
+    # edited, from ever getting these permissions. Bind the npm trusted
+    # publisher to this environment as well.
+    environment: release
     runs-on: ubuntu-latest
     permissions:
       contents: write # push tag + publish GitHub release
