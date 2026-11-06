@@ -30,7 +30,7 @@
   "scripts": {
     "clean": "node -e \"for (const d of ['dist','coverage']) require('fs').rmSync(d,{recursive:true,force:true})\"",
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsdown",
-    "build:toc": "npx doctoc . && oxfmt",
+    "build:toc": "doctoc . && oxfmt",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "lint": "oxlint --type-aware --deny-warnings",
@@ -53,6 +53,7 @@
     "@remix-run/web-form-data": "^3.0.3",
     "@size-limit/preset-small-lib": "^14.3.0",
     "@vitest/coverage-v8": "^5.1.0",
+    "doctoc": "^2.5.0",
     "knip": "^6.44.1",
     "lefthook": "^2.2.2",
     "oxfmt": "^0.76.0",
