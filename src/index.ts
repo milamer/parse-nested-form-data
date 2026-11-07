@@ -258,7 +258,7 @@ export type ParseFormDataOptions = {
 /**
  * A parsed part of a FormData path. It consists of four parts:
  * @param path - the key to access the value in the intermediate result
- * @param type - the type of the path part (array - e.g. [\d*], or object .e.g. .key)
+ * @param type - the type of the path part (array - e.g. [\d*], or object .e.g. .key or [key])
  * @param default - the default value of the next path part ([] for array, {} for object)
  * @param pathToPart - the full path to the current path part
  *
@@ -277,6 +277,11 @@ type PathPart = {
   default: JsonObject | JsonArray
   pathToPart: string
 }
+// The start or end of the path (`undefined`), `.` and `[` delimit path parts.
+function isBoundary(char: string | undefined): boolean {
+  return char === undefined || char === '.' || char === '['
+}
+
 /**
  *
  * Transforms a FormData path into an array of `PathPart`s.
@@ -303,6 +308,15 @@ type PathPart = {
  *
  * @example
  * ```ts
+ * const path = 'a[b][0]'
+ * const result = extractPathParts(path)
+ * // => [{path: 'a', type: 'object', default: {}, pathToPart: 'a'},
+ * //     {path: 'b', type: 'object', default: [], pathToPart: 'a[b]'},
+ * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[b][0]'}]
+ * ```
+ *
+ * @example
+ * ```ts
  * const path = 'a[][0]'
  * const result = extractPathParts(path)
  * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
@@ -313,36 +327,66 @@ type PathPart = {
  *
  */
 function extractPathParts(path: string): Array<PathPart> {
-  const re = /((?<array>\d*)\]|(?<pathPart>[^.[]+))(?<nextType>\[|\.|$)/g
-
-  return Array.from(path.matchAll(re)).map<PathPart>(match => {
-    // self casted RegexExpMatchArray to custom
-    // The regex guarantees exactly one of `array` / `pathPart` is set.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    const typedMatch = match as unknown as [string, string] &
-      RegExpExecArray & {
-        groups:
-          | {
-              pathPart: undefined
-              array: string
-              nextType: '[' | '.' | ''
-            }
-          | {
-              pathPart: string
-              array: undefined
-              nextType: '[' | '.' | ''
-            }
-      }
-    const {array, pathPart, nextType} = typedMatch.groups
-    const type = array === undefined ? 'object' : 'array'
-    const nextDefault = nextType === '[' ? [] : {}
-    return {
-      path: array ?? pathPart,
-      type,
-      default: nextDefault,
-      pathToPart: path.slice(0, typedMatch.index + typedMatch[1].length),
+  // `closing[i]` is the index of the `]` that closes the `[` at `i`, found
+  // by nesting like qs (`a[b[c]]`: the last `]` closes the first `[`).
+  const closing: Array<number> = []
+  const opening: Array<number> = []
+  for (let idx = 0; idx < path.length; idx++) {
+    if (path[idx] === '[') {
+      opening.push(idx)
+    } else if (path[idx] === ']') {
+      const start = opening.pop()
+      if (start !== undefined) closing[start] = idx
     }
-  })
+  }
+
+  const parts: Array<PathPart> = []
+  const addPart = (key: string, type: PathPart['type'], end: number): void => {
+    parts.push({
+      path: key,
+      type,
+      default: path[end] === '[' ? [] : {},
+      pathToPart: path.slice(0, end),
+    })
+  }
+
+  let idx = 0
+  while (idx < path.length) {
+    if (isBoundary(path[idx])) {
+      // A bracket key: `[` after a path part, a matching `]` followed by a
+      // boundary, and text that isn't an array index. The text is the key as
+      // it is (`a[.0]` is the key `.0`).
+      const close = closing[idx]
+      if (
+        close !== undefined &&
+        !isBoundary(path[idx - 1]) &&
+        isBoundary(path[close + 1]) &&
+        !/^\d*$/.test(path.slice(idx + 1, close))
+      ) {
+        // The part before `[key]` holds an object, not an array. A bracket
+        // key always follows a part, so `slice(-1)` has exactly one element.
+        for (const previous of parts.slice(-1)) previous.default = {}
+        addPart(path.slice(idx + 1, close), 'object', close + 1)
+        idx = close + 1
+      } else {
+        idx++
+      }
+      continue
+    }
+
+    // An array index (`0]`, `]`) or a key up to the next boundary.
+    let end = idx
+    while (/\d/.test(path.charAt(end))) end++
+    if (path[end] === ']' && isBoundary(path[end + 1])) {
+      addPart(path.slice(idx, end), 'array', end + 1)
+      idx = end + 1
+    } else {
+      while (!isBoundary(path[end])) end++
+      addPart(path.slice(idx, end), 'object', end)
+      idx = end
+    }
+  }
+  return parts
 }
 
 /**
@@ -432,6 +476,8 @@ function handlePathPart(
  *  - `&` => parse to `Boolean`
  *
  * - `.` between path parts => nest into `objects`
+ * - `[key]` after path part => nest into `objects`, same as `.key`; the text
+ *   in brackets is the key as it is (`a[b.c]` => key `b.c`)
  * - `[\d*]` after path part => push to array in order `\d` or push to end if `[]`
  *
 
@@ -453,6 +499,15 @@ function handlePathPart(
  * formData.append('a.b', 'foo')
  * parseFormData(formData)
  * // => {a: {b: 'foo'}}
+ * ```
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('a[b]', 'foo')
+ * formData.append('a.c', 'bar')
+ * parseFormData(formData)
+ * // => {a: {b: 'foo', c: 'bar'}}
  * ```
  *
  * @example
@@ -491,7 +546,8 @@ function handlePathPart(
  * ```
  *
  * @param {Iterable<[string, string | File]>} formData - an iterator of an [`path`, `value`] tuple
- * - `path` := `^(\+|\-|\&)?([^\.]+?(\[\d*\])*)(\.[^\.]+?(\[\d*\])*)*$` (e.g. `+a[][1].b`)
+ * - `path` := an optional prefix (`+`, `-`, `&`), then keys joined by `.`,
+ *   followed by any number of `[]`, `[\d+]` or `[key]` (e.g. `+a[][1].b[c]`)
  * - `value` := `string` or `File` (native or polyfilled `File` values are kept
  *   as they are)
  * @param {ParseFormDataOptions} options - options for parsing the form data
@@ -510,6 +566,7 @@ function handlePathPart(
  * `constructor`, `prototype` or the name of a property on `Object.prototype`
  * - e.g. `__proto__.polluted`
  * - e.g. `user.toString`
+ * - e.g. `user[toString]`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,
