@@ -93,6 +93,27 @@ export class ForbiddenKeyError extends Error {
   }
 }
 
+/**
+ * Thrown when a bracket key contains `.`, `[` or `]`. A bracket key is the
+ * text inside `[...]` that isn't an array index (`a[foo]` is the same as
+ * `a.foo`).
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('a[foo.bar]', 'x')
+ * parseFormData(formData)
+ * // throws InvalidPathError('a[foo.bar]')
+ * ```
+ */
+export class InvalidPathError extends Error {
+  key: string
+  constructor(key: string) {
+    super(`Invalid path at path part ${key}`)
+    this.key = key
+  }
+}
+
 // Rejected even when a runtime doesn't define them on `Object.prototype`
 // (e.g. `node --disable-proto=delete`).
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
@@ -247,7 +268,7 @@ export type ParseFormDataOptions = {
 /**
  * A parsed part of a FormData path. It consists of four parts:
  * @param path - the key to access the value in the intermediate result
- * @param type - the type of the path part (array - e.g. [\d*], or object .e.g. .key)
+ * @param type - the type of the path part (array - e.g. [\d*], or object .e.g. .key or [key])
  * @param default - the default value of the next path part ([] for array, {} for object)
  * @param pathToPart - the full path to the current path part
  *
@@ -266,6 +287,17 @@ type PathPart = {
   default: JsonObject | JsonArray
   pathToPart: string
 }
+// A path part is followed by `.`, `[` or the end of the path. Alternatives:
+// - `array`: digits (or nothing) before `]`, an array index or a push
+// - `key`: a bracket key, i.e. the text up to `]` right after a `[` that
+//   follows a path part (validated in `extractPathParts`). It can't start
+//   with `.` or `[`, which are skipped after a `[` (`a[[0]` and `a[.[0]` are
+//   `a[0]`).
+// - otherwise an object key up to the next `.` or `[`
+const PATH_PART_RE =
+  /(?:(?<array>\d*)\]|(?<=[^.[]\[)(?<key>[^.[][\s\S]*?)\]|[^.[]+)(?=[.[]|$)/g
+const INVALID_BRACKET_KEY_RE = /[.[\]]/
+
 /**
  *
  * Transforms a FormData path into an array of `PathPart`s.
@@ -292,6 +324,15 @@ type PathPart = {
  *
  * @example
  * ```ts
+ * const path = 'a[b][0]'
+ * const result = extractPathParts(path)
+ * // => [{path: 'a', type: 'object', default: {}, pathToPart: 'a'},
+ * //     {path: 'b', type: 'object', default: [], pathToPart: 'a[b]'},
+ * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[b][0]'}]
+ * ```
+ *
+ * @example
+ * ```ts
  * const path = 'a[][0]'
  * const result = extractPathParts(path)
  * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
@@ -302,36 +343,27 @@ type PathPart = {
  *
  */
 function extractPathParts(path: string): Array<PathPart> {
-  const re = /((?<array>\d*)\]|(?<pathPart>[^.[]+))(?<nextType>\[|\.|$)/g
-
-  return Array.from(path.matchAll(re)).map<PathPart>(match => {
-    // self casted RegexExpMatchArray to custom
-    // The regex guarantees exactly one of `array` / `pathPart` is set.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    const typedMatch = match as unknown as [string, string] &
-      RegExpExecArray & {
-        groups:
-          | {
-              pathPart: undefined
-              array: string
-              nextType: '[' | '.' | ''
-            }
-          | {
-              pathPart: string
-              array: undefined
-              nextType: '[' | '.' | ''
-            }
+  const parts: Array<PathPart> = []
+  for (const match of path.matchAll(PATH_PART_RE)) {
+    const {array, key} = {...match.groups}
+    const end = match.index + match[0].length
+    const pathToPart = path.slice(0, end)
+    if (key !== undefined) {
+      if (INVALID_BRACKET_KEY_RE.test(key)) {
+        throw new InvalidPathError(pathToPart)
       }
-    const {array, pathPart, nextType} = typedMatch.groups
-    const type = array === undefined ? 'object' : 'array'
-    const nextDefault = nextType === '[' ? [] : {}
-    return {
-      path: array ?? pathPart,
-      type,
-      default: nextDefault,
-      pathToPart: path.slice(0, typedMatch.index + typedMatch[1].length),
+      // The part before `[key]` holds an object, not an array. A bracket key
+      // always follows a part, so `slice(-1)` has exactly one element.
+      for (const previous of parts.slice(-1)) previous.default = {}
     }
-  })
+    parts.push({
+      path: array ?? key ?? match[0],
+      type: array === undefined ? 'object' : 'array',
+      default: path[end] === '[' ? [] : {},
+      pathToPart,
+    })
+  }
+  return parts
 }
 
 /**
@@ -445,6 +477,7 @@ function handlePathPart(
  *  - `&` => parse to `Boolean`
  *
  * - `.` between path parts => nest into `objects`
+ * - `[key]` after path part => nest into `objects`, same as `.key`
  * - `[\d*]` after path part => push to array in order `\d` or push to end if `[]`
  *
 
@@ -466,6 +499,15 @@ function handlePathPart(
  * formData.append('a.b', 'foo')
  * parseFormData(formData)
  * // => {a: {b: 'foo'}}
+ * ```
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('a[b]', 'foo')
+ * formData.append('a.c', 'bar')
+ * parseFormData(formData)
+ * // => {a: {b: 'foo', c: 'bar'}}
  * ```
  *
  * @example
@@ -504,7 +546,8 @@ function handlePathPart(
  * ```
  *
  * @param {Iterable<[string, string | File]>} formData - an iterator of an [`path`, `value`] tuple
- * - `path` := `^(\+|\-|\&)?([^\.]+?(\[\d*\])*)(\.[^\.]+?(\[\d*\])*)*$` (e.g. `+a[][1].b`)
+ * - `path` := `^(\+|\-|\&)?([^\.]+?(\[[^.[\]]*\])*)(\.[^\.]+?(\[[^.[\]]*\])*)*$`
+ *   (e.g. `+a[][1].b[c]`)
  * - `value` := `string` or `File` (native or polyfilled `File` values are kept
  *   as they are)
  * @param {ParseFormDataOptions} options - options for parsing the form data
@@ -522,6 +565,8 @@ function handlePathPart(
  * @throws `ForbiddenKeyError` if an object path part is `__proto__`,
  * `constructor` or `prototype`
  * - e.g. `__proto__.polluted`
+ * @throws `InvalidPathError` if a bracket key contains `.`, `[` or `]`
+ * - e.g. `a[b.c]`
  *
  * An entry with any other object path part named like a property on
  * `Object.prototype` (`toString`, `hasOwnProperty`, ...) is removed, like `qs`
@@ -529,6 +574,7 @@ function handlePathPart(
  * as an unused name: an error doesn't tell the client which properties exist
  * on the server's `Object.prototype`.
  * - e.g. `user.toString` => `{}`
+ * - e.g. `user[toString]` => `{}`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,

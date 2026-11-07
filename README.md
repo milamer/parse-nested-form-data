@@ -75,6 +75,7 @@ The name prop is used to tell the parser how to create an object out of the
 values. The name prop is a string that can contain the following characters:
 
 - `.`: to create a nested object
+- `[$key]`: to create a nested object (same as `.$key`)
 - `[]`: to create an array (pushes value)
 - `[$order]`: to create an array (sets value at index and squashes array)
 - `&`: to transform the value to a boolean
@@ -215,9 +216,38 @@ parseFormData(formData)
 // }
 ```
 
+A key in brackets works the same as a key after a `.`, so `object[a]` and
+`object.a` refer to the same key. Only digits in brackets (`[0]`) create an
+array. Both forms can be mixed with each other and with arrays:
+
+```ts
+const formData = new FormData()
+formData.append('object[a]', '1')
+formData.append('object.b[0].c', '2')
+formData.append('object[b][1][c]', '3')
+parseFormData(formData)
+// {
+//   object: {
+//     a: '1',
+//     b: [{c: '2'}, {c: '3'}],
+//   },
+// }
+```
+
+A key in brackets can't contain `.`, `[` or `]`. `parseFormData` throws an
+`InvalidPathError` with the path up to that part:
+
+```ts
+const formData = new FormData()
+formData.append('object[a.b]', '1')
+parseFormData(formData)
+// throws InvalidPathError('object[a.b]')
+```
+
 `__proto__`, `constructor` and `prototype` can't be used as an object path part,
-at any position, because they could modify `Object.prototype`. `parseFormData`
-throws a `ForbiddenKeyError` with the path up to that part:
+at any position, with or without brackets, because they could modify
+`Object.prototype`. `parseFormData` throws a `ForbiddenKeyError` with the path
+up to that part:
 
 ```ts
 const formData = new FormData()

@@ -3,6 +3,7 @@ import {Blob as RemixBlob, File} from '@remix-run/web-file'
 import {
   DuplicateKeyError,
   ForbiddenKeyError,
+  InvalidPathError,
   MixedArrayError,
   parseFormData,
 } from '../'
@@ -406,6 +407,95 @@ describe('complex examples', () => {
   })
 })
 
+describe('bracket keys', () => {
+  it('parses `a[foo]` like `a.foo`', () => {
+    expect(
+      parseFormData([
+        ['myField[foo]', '1'],
+        ['myField[bar]', '2'],
+      ]),
+    ).toStrictEqual({myField: {foo: '1', bar: '2'}})
+  })
+
+  it.each([
+    ['a[foo][0].bar', {a: {foo: [{bar: 'x'}]}}],
+    ['a[foo][]', {a: {foo: ['x']}}],
+    ['a[foo][bar]', {a: {foo: {bar: 'x'}}}],
+    ['a[foo].bar', {a: {foo: {bar: 'x'}}}],
+    ['a.b[foo]', {a: {b: {foo: 'x'}}}],
+    ['a[0][foo]', {a: [{foo: 'x'}]}],
+    ['a[][foo]', {a: [{foo: 'x'}]}],
+    ['a[f-o o]', {a: {'f-o o': 'x'}}],
+    ['a[0x]', {a: {'0x': 'x'}}],
+  ])('combines with other path parts: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  it('applies the value prefixes', () => {
+    expect(
+      parseFormData([
+        ['+a[num]', '1'],
+        ['&a[bool]', 'on'],
+        ['-a[nil]', 'x'],
+      ]),
+    ).toStrictEqual({a: {num: 1, bool: true, nil: null}})
+  })
+
+  it('merges with dot keys into the same object', () => {
+    expect(
+      parseFormData([
+        ['a.foo.x', '1'],
+        ['a[foo].y', '2'],
+        ['a[foo][z][]', '3'],
+        ['a.foo.z[]', '4'],
+      ]),
+    ).toStrictEqual({a: {foo: {x: '1', y: '2', z: ['3', '4']}}})
+  })
+
+  it.each([
+    ['a.foo', 'a[foo]', 'a[foo]'],
+    ['a[foo]', 'a.foo', 'a.foo'],
+    ['a[foo]', 'a[foo]', 'a[foo]'],
+    ['a[foo]', 'a[foo].bar', 'a[foo]'],
+    ['a[0]', 'a[foo]', 'a[foo]'],
+    ['a[]', 'a[foo]', 'a[foo]'],
+    ['a[foo]', 'a[0]', 'a[0]'],
+    ['a', 'a[foo]', 'a'],
+  ])('%s, %s -> DuplicateKeyError(%s)', (first, second, key) => {
+    expect(() =>
+      parseFormData([
+        [first, 'x'],
+        [second, 'y'],
+      ]),
+    ).toThrow(new DuplicateKeyError(key))
+  })
+
+  it.each([
+    ['a[foo.bar]', 'a[foo.bar]'],
+    ['a[foo[0]]', 'a[foo[0]]'],
+    ['a[fo]o]', 'a[fo]o]'],
+    ['a[]]', 'a[]]'],
+    ['a[foo][x.y].z', 'a[foo][x.y]'],
+    ['+a[0][x.y]', 'a[0][x.y]'],
+  ])('%s -> InvalidPathError(%s)', (path, key) => {
+    expect(() => parseFormData([[path, 'x']])).toThrow(
+      new InvalidPathError(key),
+    )
+  })
+
+  it('reports the invalid part in the error', () => {
+    const error = new InvalidPathError('a[foo.bar]')
+    expect(error).toBeInstanceOf(Error)
+    expect(error.key).toBe('a[foo.bar]')
+    expect(error.message).toBe('Invalid path at path part a[foo.bar]')
+  })
+
+  // A `.` or `[` right after `[` is skipped, so these are array paths.
+  it.each(['a[[0]', 'a[.[0]', 'a[.]'])('parses %s as an array', path => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual({a: ['x']})
+  })
+})
+
 describe('prototype pollution protection', () => {
   const proto: object = Object.prototype
   afterEach(() => {
@@ -465,22 +555,18 @@ describe('prototype pollution protection', () => {
     )
   })
 
-  // The cases below pin the invariant for the array branch, which has no
-  // forbidden-key check. The regex restricts array-index segments to digit
-  // characters, so no forbidden name (these three or any other
-  // `Object.prototype` name) can reach the array branch: the cases parse as an
-  // object pathPart with a trailing `]` and trip the array/object
-  // duplicate-key guard. If the regex is ever loosened to accept arbitrary
-  // content inside `[...]`, these tests will start failing and the array
-  // branch will need its own forbidden-key check.
-  // NOTE: `a[name]` is not a supported path yet (see issue #2), so this
-  // currently fails as a DuplicateKeyError before the forbidden-key check runs.
+  // A bracket key is an object path part, so it goes through the same
+  // forbidden-key check as a dot key. Only digits inside `[...]` reach the
+  // array branch.
   it.each(['__proto__', 'constructor', 'prototype'])(
     'does not pollute via `a[%s]`',
     key => {
-      const formData = new FormData()
-      formData.append(`a[${key}]`, 'yes')
-      expect(() => parseFormData(formData)).toThrow(DuplicateKeyError)
+      expect(() => parseFormData([[`a[${key}]`, 'yes']])).toThrow(
+        new ForbiddenKeyError(`a[${key}]`),
+      )
+      expect(() => parseFormData([[`b[${key}].polluted`, 'yes']])).toThrow(
+        new ForbiddenKeyError(`b[${key}]`),
+      )
       expect(Reflect.get(proto, 'polluted')).toBeUndefined()
     },
   )
@@ -512,7 +598,14 @@ describe('Object.prototype names', () => {
     name => name !== '__proto__' && name !== 'constructor',
   )
   it.each(
-    names.flatMap(name => [name, `a.${name}`, `${name}.a`, `a[0].${name}`]),
+    names.flatMap(name => [
+      name,
+      `a.${name}`,
+      `${name}.a`,
+      `a[0].${name}`,
+      `a[${name}]`,
+      `a[${name}].b`,
+    ]),
   )('removes the entry %s', path => {
     const result = parseFormData([
       [path, 'x'],
