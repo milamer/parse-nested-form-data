@@ -215,11 +215,12 @@ parseFormData(formData)
 // }
 ```
 
-Names of properties on `Object.prototype` (`__proto__`, `constructor`,
-`hasOwnProperty`, `toString`, `valueOf`, ...) and `prototype` can't be used as a
-path part, at any position. They would either reach `Object.prototype` or shadow
-built-in methods on the parsed object, so `parseFormData` throws a
-`ForbiddenKeyError` with the path up to that part:
+Names of properties on `Object.prototype` when parsing (`toString`, `valueOf`,
+`hasOwnProperty`, ..., including any that a newer runtime or other code has
+added) and `__proto__`, `constructor` and `prototype` can't be used as a path
+part, at any position. These names would either reach `Object.prototype`, be
+read as an existing value, or shadow built-in methods on the parsed object, so
+`parseFormData` throws a `ForbiddenKeyError` with the path up to that part:
 
 ```ts
 const formData = new FormData()

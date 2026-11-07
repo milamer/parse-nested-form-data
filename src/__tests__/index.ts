@@ -484,6 +484,23 @@ describe('prototype pollution protection', () => {
   )
 })
 
+// Parses `key` with that property removed from Object.prototype and returns
+// the thrown error. The property is restored before returning, so a failing
+// assertion can't leave the prototype broken for later tests.
+function parseErrorWithoutPrototypeProperty(key: string): unknown {
+  const proto: object = Object.prototype
+  const descriptor = Object.getOwnPropertyDescriptor(proto, key)
+  Reflect.deleteProperty(proto, key)
+  try {
+    parseFormData([[key, 'x']])
+  } catch (error) {
+    return error
+  } finally {
+    if (descriptor) Object.defineProperty(proto, key, descriptor)
+  }
+  return undefined
+}
+
 describe('Object.prototype names', () => {
   it.each([
     ['toString', 'toString'],
@@ -496,20 +513,37 @@ describe('Object.prototype names', () => {
     )
   })
 
-  it('rejects every own property name of Object.prototype on this runtime', () => {
-    // The forbidden names are a fixed list in the source. A name added to
-    // Object.prototype by a newer runtime shows up here.
-    const notRejected = Object.getOwnPropertyNames(Object.prototype).filter(
-      key => {
-        try {
-          parseFormData([[key, 'x']])
-        } catch (error) {
-          return !(error instanceof ForbiddenKeyError)
-        }
-        return true
-      },
-    )
-    expect(notRejected).toStrictEqual([])
+  // Like `node --disable-proto=delete`, which removes `__proto__`.
+  it.each(['__proto__', 'constructor'])(
+    'rejects `%s` even when Object.prototype lacks it',
+    key => {
+      expect(parseErrorWithoutPrototypeProperty(key)).toStrictEqual(
+        new ForbiddenKeyError(key),
+      )
+    },
+  )
+
+  describe('a property added to Object.prototype', () => {
+    const proto: object = Object.prototype
+    afterEach(() => {
+      Reflect.deleteProperty(proto, 'patched')
+    })
+
+    it('is rejected and the added value stays unchanged', () => {
+      const shared = {}
+      Object.defineProperty(proto, 'patched', {
+        value: shared,
+        configurable: true,
+        writable: true,
+      })
+      expect(() => parseFormData([['patched.x', '1']])).toThrow(
+        new ForbiddenKeyError('patched'),
+      )
+      expect(() => parseFormData([['a.patched', '1']])).toThrow(
+        new ForbiddenKeyError('a.patched'),
+      )
+      expect(shared).toStrictEqual({})
+    })
   })
 })
 

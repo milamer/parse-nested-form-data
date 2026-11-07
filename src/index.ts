@@ -73,11 +73,13 @@ export class MixedArrayError extends Error {
 }
 /**
  * Thrown when a path part is the name of a property on `Object.prototype`
- * (`__proto__`, `constructor`, `hasOwnProperty`, `toString`, `valueOf`, ...)
- * or `prototype`. `__proto__`, `constructor` and `prototype` could reach and
- * modify `Object.prototype`. The other names would shadow built-in methods
- * that generic code calls on the parsed object. The names are rejected at any
- * position in the path.
+ * when parsing (`toString`, `valueOf`, `hasOwnProperty`, ..., including
+ * properties added by a newer runtime or by code that patches it), or one of
+ * `__proto__`, `constructor` and `prototype`, which are rejected on every
+ * runtime. `__proto__`, `constructor` and `prototype` could reach and modify
+ * `Object.prototype`. The other names would shadow built-in methods that
+ * generic code calls on the parsed object, or an added property would be read
+ * as an existing value. The names are rejected at any position in the path.
  *
  * @example
  * ```ts
@@ -103,24 +105,16 @@ export class ForbiddenKeyError extends Error {
   }
 }
 
-// Every own property name of `Object.prototype`, plus `prototype`. Written
-// out instead of read from `Object.getOwnPropertyNames` at runtime, so the
-// accepted names are the same on every engine.
-const FORBIDDEN_OBJECT_KEYS = new Set([
-  '__proto__',
-  'constructor',
-  'prototype',
-  '__defineGetter__',
-  '__defineSetter__',
-  '__lookupGetter__',
-  '__lookupSetter__',
-  'hasOwnProperty',
-  'isPrototypeOf',
-  'propertyIsEnumerable',
-  'toLocaleString',
-  'toString',
-  'valueOf',
-])
+// Rejected even when a runtime doesn't define them on `Object.prototype`
+// (e.g. `node --disable-proto=delete`).
+const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+function isForbiddenKey(key: string): boolean {
+  return (
+    FORBIDDEN_OBJECT_KEYS.has(key) ||
+    Object.getOwnPropertyDescriptor(Object.prototype, key) !== undefined
+  )
+}
 
 type JsonObject = {[Key in string]?: JsonValue}
 type JsonArray = Array<JsonValue>
@@ -393,7 +387,7 @@ function handlePathPart(
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
 ] {
-  if (FORBIDDEN_OBJECT_KEYS.has(pathPart.path)) {
+  if (isForbiddenKey(pathPart.path)) {
     throw new ForbiddenKeyError(pathPart.pathToPart)
   }
   if (pathPart.type === 'object') {
