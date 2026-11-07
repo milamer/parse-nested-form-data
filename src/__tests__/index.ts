@@ -480,13 +480,24 @@ describe('bracket keys', () => {
     expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
   })
 
-  // A `.` or `[` right after `[` is skipped, so these are array paths.
-  it.each(['a[[0]', 'a[.[0]', 'a[.]', 'a[.0]'])(
-    'parses %s as an array',
-    path => {
-      expect(parseFormData([[path, 'x']])).toStrictEqual({a: ['x']})
-    },
-  )
+  it.each([
+    ['a[.]', {a: {'.': 'x'}}],
+    ['a[.0]', {a: {'.0': 'x'}}],
+    ['a[..0]', {a: {'..0': 'x'}}],
+    ['a[.b]', {a: {'.b': 'x'}}],
+    ['a[[0]]', {a: {'[0]': 'x'}}],
+    ['a[[x]]', {a: {'[x]': 'x'}}],
+    ['a[[0].b]', {a: {'[0].b': 'x'}}],
+    ['a[[b]][c]', {a: {'[b]': {c: 'x'}}}],
+  ])('uses text starting with `.` or `[` as the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  // The first `[` has no matching `]`, so it isn't a bracket key and is
+  // skipped like a `.`.
+  it.each(['a[[0]', 'a[.[0]'])('parses %s as an array', path => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual({a: ['x']})
+  })
 
   // Without a matching `]` followed by `.`, `[` or the end of the path, the
   // brackets aren't a bracket key: `a` becomes an array and the rest an object
