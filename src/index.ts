@@ -72,10 +72,12 @@ export class MixedArrayError extends Error {
   }
 }
 /**
- * Thrown when a path part would access or assign a property on
- * `Object.prototype` (`__proto__`, `constructor`, `prototype`). Rejected
- * regardless of whether pollution would actually occur, to keep input
- * unambiguous.
+ * Thrown when an object path part is `__proto__`, `constructor`, `prototype`,
+ * or the name of any property on `Object.prototype` at parse time
+ * (`toString`, `hasOwnProperty`, ..., including properties added by a newer
+ * runtime or by other code). The first three could modify `Object.prototype`.
+ * The others would shadow built-in methods on the parsed object, or be read as
+ * an existing value. The names are rejected at any position in the path.
  *
  * @example
  * ```ts
@@ -83,6 +85,14 @@ export class MixedArrayError extends Error {
  * formData.append('__proto__.polluted', 'yes')
  * parseFormData(formData)
  * // throws ForbiddenKeyError('__proto__')
+ * ```
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('user.toString', 'x')
+ * parseFormData(formData)
+ * // throws ForbiddenKeyError('user.toString')
  * ```
  */
 export class ForbiddenKeyError extends Error {
@@ -93,7 +103,16 @@ export class ForbiddenKeyError extends Error {
   }
 }
 
+// Rejected even when a runtime doesn't define them on `Object.prototype`
+// (e.g. `node --disable-proto=delete`).
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+function isForbiddenKey(key: string): boolean {
+  return (
+    FORBIDDEN_OBJECT_KEYS.has(key) ||
+    Object.getOwnPropertyDescriptor(Object.prototype, key) !== undefined
+  )
+}
 
 type JsonObject = {[Key in string]?: JsonValue}
 type JsonArray = Array<JsonValue>
@@ -366,10 +385,10 @@ function handlePathPart(
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
 ] {
-  if (FORBIDDEN_OBJECT_KEYS.has(pathPart.path)) {
-    throw new ForbiddenKeyError(pathPart.pathToPart)
-  }
   if (pathPart.type === 'object') {
+    if (isForbiddenKey(pathPart.path)) {
+      throw new ForbiddenKeyError(pathPart.pathToPart)
+    }
     if (Array.isArray(currentPathObject)) {
       throw new DuplicateKeyError(pathPart.pathToPart)
     }
@@ -487,6 +506,10 @@ function handlePathPart(
  * defined and at a later path part an ordered array is defined or vice versa
  * - e.g. `a[0]` and `a[]`
  * - e.g. `a[]` and `a[0]`
+ * @throws `ForbiddenKeyError` if an object path part is `__proto__`,
+ * `constructor`, `prototype` or the name of a property on `Object.prototype`
+ * - e.g. `__proto__.polluted`
+ * - e.g. `user.toString`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,

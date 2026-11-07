@@ -464,13 +464,14 @@ describe('prototype pollution protection', () => {
     )
   })
 
-  // The cases below pin the invariant for the array branch. Today the regex
-  // restricts array-index segments to digit characters, so a forbidden key
-  // can't reach the array branch (the cases parse as an object pathPart with
-  // a trailing `]` and trip the array/object duplicate-key guard). If the
-  // regex is ever loosened to accept arbitrary content inside `[...]`, these
-  // tests will start failing and the array branch will need its own
-  // forbidden-key check.
+  // The cases below pin the invariant for the array branch, which has no
+  // forbidden-key check. The regex restricts array-index segments to digit
+  // characters, so no forbidden name (these three or any other
+  // `Object.prototype` name) can reach the array branch: the cases parse as an
+  // object pathPart with a trailing `]` and trip the array/object
+  // duplicate-key guard. If the regex is ever loosened to accept arbitrary
+  // content inside `[...]`, these tests will start failing and the array
+  // branch will need its own forbidden-key check.
   // NOTE: `a[name]` is not a supported path yet (see issue #2), so this
   // currently fails as a DuplicateKeyError before the forbidden-key check runs.
   it.each(['__proto__', 'constructor', 'prototype'])(
@@ -482,6 +483,80 @@ describe('prototype pollution protection', () => {
       expect(Reflect.get(proto, 'polluted')).toBeUndefined()
     },
   )
+})
+
+// Parses `key` with that property removed from Object.prototype and returns
+// the thrown error, or an error naming `key` if nothing was thrown. The
+// property is restored before returning, so a failing assertion can't leave the
+// prototype broken for later tests.
+function parseErrorWithoutPrototypeProperty(key: string): unknown {
+  const proto: object = Object.prototype
+  const descriptor = Object.getOwnPropertyDescriptor(proto, key)
+  Reflect.deleteProperty(proto, key)
+  try {
+    parseFormData([[key, 'x']])
+  } catch (error) {
+    return error
+  } finally {
+    if (descriptor) Object.defineProperty(proto, key, descriptor)
+  }
+  return new Error(`expected ${key} to be rejected`)
+}
+
+describe('Object.prototype names', () => {
+  // Fields with these names would shadow built-in methods on the parsed
+  // object (e.g. `hasOwnProperty`), so they are rejected.
+  const names = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
+  it.each(
+    names.flatMap(name => [
+      [name, name],
+      [`a.${name}`, `a.${name}`],
+      [`${name}.a`, name],
+    ]),
+  )('%s -> ForbiddenKeyError(%s)', (path, key) => {
+    expect(() => parseFormData([[path, 'x']])).toThrow(
+      new ForbiddenKeyError(key),
+    )
+  })
+
+  it('rejects a name after an array part', () => {
+    expect(() => parseFormData([['a[0].valueOf', 'x']])).toThrow(
+      new ForbiddenKeyError('a[0].valueOf'),
+    )
+  })
+
+  // Like `node --disable-proto=delete`, which removes `__proto__`.
+  it.each(['__proto__', 'constructor'])(
+    'rejects `%s` even when Object.prototype lacks it',
+    key => {
+      expect(parseErrorWithoutPrototypeProperty(key)).toStrictEqual(
+        new ForbiddenKeyError(key),
+      )
+    },
+  )
+
+  describe('a property added to Object.prototype', () => {
+    const proto: object = Object.prototype
+    afterEach(() => {
+      Reflect.deleteProperty(proto, 'patched')
+    })
+
+    it('is rejected and the added value stays unchanged', () => {
+      const shared = {}
+      Object.defineProperty(proto, 'patched', {
+        value: shared,
+        configurable: true,
+        writable: true,
+      })
+      expect(() => parseFormData([['patched.x', '1']])).toThrow(
+        new ForbiddenKeyError('patched'),
+      )
+      expect(() => parseFormData([['a.patched', '1']])).toThrow(
+        new ForbiddenKeyError('a.patched'),
+      )
+      expect(shared).toStrictEqual({})
+    })
+  })
 })
 
 class RemixFileSubclass extends File {}

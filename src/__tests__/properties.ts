@@ -12,7 +12,7 @@ type Data = string | Array<Data> | {[key: string]: Data}
 
 // Every key matching this pattern must round-trip. It can't produce a name
 // from Object.prototype (those are camelCase, start with `_`, or are longer),
-// so no rejected key is generated. Rejected keys are tested in `known bugs`.
+// so no rejected key is generated. Rejected keys are tested in `index.ts`.
 const keyArb = fc.stringMatching(/^[a-z][a-z0-9_]{0,7}$/)
 
 // Containers are never empty: an empty object or array produces no entries,
@@ -201,24 +201,5 @@ describe('known bugs', () => {
       String(idx),
     ])
     expect(parseFormData(entries).a).toHaveLength(200_000)
-  })
-
-  // Fields with these names would shadow built-in methods on the parsed
-  // object (e.g. `hasOwnProperty`), so they are rejected. Today most of them
-  // throw a misleading DuplicateKeyError instead.
-  it.fails('rejects keys that exist on Object.prototype with ForbiddenKeyError', () => {
-    const keys = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
-    for (const key of keys) {
-      const cases: Array<[path: string, errorKey: string]> = [
-        [key, key],
-        [`a.${key}`, `a.${key}`],
-        [`${key}.a`, key],
-      ]
-      for (const [path, errorKey] of cases) {
-        expect(() => parseFormData([[path, 'x']])).toThrow(
-          new ForbiddenKeyError(errorKey),
-        )
-      }
-    }
   })
 })

@@ -215,6 +215,21 @@ parseFormData(formData)
 // }
 ```
 
+`__proto__`, `constructor`, `prototype` and the name of any property on
+`Object.prototype` at parse time (`toString`, `hasOwnProperty`, ..., including
+any added by a newer runtime or by other code) can't be used as an object path
+part, at any position. The first three could modify `Object.prototype`; the
+others would shadow built-in methods on the parsed object, or be read as an
+existing value. `parseFormData` throws a `ForbiddenKeyError` with the path up to
+that part:
+
+```ts
+const formData = new FormData()
+formData.append('user.toString', 'x')
+parseFormData(formData)
+// throws ForbiddenKeyError('user.toString')
+```
+
 ### Files
 
 `File` values are returned as they are, whether they are native or come from a
