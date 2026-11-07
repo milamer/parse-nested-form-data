@@ -484,6 +484,35 @@ describe('prototype pollution protection', () => {
   )
 })
 
+describe('Object.prototype names', () => {
+  it.each([
+    ['toString', 'toString'],
+    ['a.toString', 'a.toString'],
+    ['toString.a', 'toString'],
+    ['a[0].valueOf', 'a[0].valueOf'],
+  ])('%s -> ForbiddenKeyError(%s)', (path, key) => {
+    expect(() => parseFormData([[path, 'x']])).toThrow(
+      new ForbiddenKeyError(key),
+    )
+  })
+
+  it('rejects every own property name of Object.prototype on this runtime', () => {
+    // The forbidden names are a fixed list in the source. A name added to
+    // Object.prototype by a newer runtime shows up here.
+    const notRejected = Object.getOwnPropertyNames(Object.prototype).filter(
+      key => {
+        try {
+          parseFormData([[key, 'x']])
+        } catch (error) {
+          return !(error instanceof ForbiddenKeyError)
+        }
+        return true
+      },
+    )
+    expect(notRejected).toStrictEqual([])
+  })
+})
+
 class RemixFileSubclass extends File {}
 
 function fileFromNativeFormData(): File {

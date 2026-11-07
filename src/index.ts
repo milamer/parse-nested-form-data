@@ -72,10 +72,12 @@ export class MixedArrayError extends Error {
   }
 }
 /**
- * Thrown when a path part would access or assign a property on
- * `Object.prototype` (`__proto__`, `constructor`, `prototype`). Rejected
- * regardless of whether pollution would actually occur, to keep input
- * unambiguous.
+ * Thrown when a path part is the name of a property on `Object.prototype`
+ * (`__proto__`, `constructor`, `hasOwnProperty`, `toString`, `valueOf`, ...)
+ * or `prototype`. `__proto__`, `constructor` and `prototype` could reach and
+ * modify `Object.prototype`. The other names would shadow built-in methods
+ * that generic code calls on the parsed object. The names are rejected at any
+ * position in the path.
  *
  * @example
  * ```ts
@@ -83,6 +85,14 @@ export class MixedArrayError extends Error {
  * formData.append('__proto__.polluted', 'yes')
  * parseFormData(formData)
  * // throws ForbiddenKeyError('__proto__')
+ * ```
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('user.toString', 'x')
+ * parseFormData(formData)
+ * // throws ForbiddenKeyError('user.toString')
  * ```
  */
 export class ForbiddenKeyError extends Error {
@@ -93,7 +103,24 @@ export class ForbiddenKeyError extends Error {
   }
 }
 
-const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+// Every own property name of `Object.prototype`, plus `prototype`. Written
+// out instead of read from `Object.getOwnPropertyNames` at runtime, so the
+// accepted names are the same on every engine.
+const FORBIDDEN_OBJECT_KEYS = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+  '__defineGetter__',
+  '__defineSetter__',
+  '__lookupGetter__',
+  '__lookupSetter__',
+  'hasOwnProperty',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+  'toLocaleString',
+  'toString',
+  'valueOf',
+])
 
 type JsonObject = {[Key in string]?: JsonValue}
 type JsonArray = Array<JsonValue>

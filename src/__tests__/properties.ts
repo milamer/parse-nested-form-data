@@ -202,11 +202,12 @@ describe('known bugs', () => {
     ])
     expect(parseFormData(entries).a).toHaveLength(200_000)
   })
+})
 
+describe('Object.prototype names', () => {
   // Fields with these names would shadow built-in methods on the parsed
-  // object (e.g. `hasOwnProperty`), so they are rejected. Today most of them
-  // throw a misleading DuplicateKeyError instead.
-  it.fails('rejects keys that exist on Object.prototype with ForbiddenKeyError', () => {
+  // object (e.g. `hasOwnProperty`), so they are rejected.
+  it('rejects keys that exist on Object.prototype with ForbiddenKeyError', () => {
     const keys = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
     for (const key of keys) {
       const cases: Array<[path: string, errorKey: string]> = [
