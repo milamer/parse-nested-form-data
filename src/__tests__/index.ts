@@ -503,26 +503,56 @@ function parseErrorWithoutPrototypeProperty(key: string): unknown {
   return new Error(`expected ${key} to be rejected`)
 }
 
+// The error thrown for `paths` with `NAME` replaced by `name`, with `name` in
+// its message replaced by `NAME`, or undefined if nothing was thrown.
+function errorWithName(paths: Array<string>, name: string): unknown {
+  try {
+    parseFormData(paths.map(path => [path.replace('NAME', name), 'x']))
+  } catch (error) {
+    return error instanceof Error
+      ? `${error.constructor.name}: ${error.message.replace(name, 'NAME')}`
+      : error
+  }
+  return undefined
+}
+
 describe('Object.prototype names', () => {
   // Fields with these names would shadow built-in methods on the parsed
-  // object (e.g. `hasOwnProperty`), so they are rejected.
-  const names = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
+  // object (e.g. `hasOwnProperty`), so they are removed. `__proto__` and
+  // `constructor` throw instead (see above).
+  const names = Object.getOwnPropertyNames(Object.prototype).filter(
+    name => name !== '__proto__' && name !== 'constructor',
+  )
   it.each(
     names.flatMap(name => [
-      [name, name],
-      [`a.${name}`, `a.${name}`],
-      [`${name}.a`, name],
+      [name, {}],
+      [`a.${name}`, {a: {}}],
+      [`${name}.a`, {}],
+      [`a[0].${name}`, {a: [{}]}],
     ]),
-  )('%s -> ForbiddenKeyError(%s)', (path, key) => {
-    expect(() => parseFormData([[path, 'x']])).toThrow(
-      new ForbiddenKeyError(key),
-    )
+  )('removes %s', (path, expected) => {
+    const result = parseFormData([
+      [path, 'x'],
+      ['b', 'y'],
+    ])
+    expect(result).toStrictEqual({...expected, b: 'y'})
+    expect(Object.prototype.hasOwnProperty.call(result, 'b')).toBe(true)
   })
 
-  it('rejects a name after an array part', () => {
-    expect(() => parseFormData([['a[0].valueOf', 'x']])).toThrow(
-      new ForbiddenKeyError('a[0].valueOf'),
-    )
+  // The same errors as for an unused name, so an error doesn't tell the
+  // client which names exist on Object.prototype.
+  it.each([
+    ['NAME', 'NAME'],
+    ['a', 'a.NAME'],
+    ['a.NAME', 'a'],
+    ['NAME.a', 'NAME'],
+    ['NAME[]', 'NAME[0]'],
+    ['NAME[0]', 'NAME.a'],
+  ])('%s, %s throws as for an unused name', (first, second) => {
+    const errorWith = (name: string): unknown =>
+      errorWithName([first, second], name)
+    expect(errorWith('toString')).toStrictEqual(errorWith('unused'))
+    expect(errorWith('toString')).not.toBeUndefined()
   })
 
   // Like `node --disable-proto=delete`, which removes `__proto__`.
@@ -541,20 +571,42 @@ describe('Object.prototype names', () => {
       Reflect.deleteProperty(proto, 'patched')
     })
 
-    it('is rejected and the added value stays unchanged', () => {
+    it('is removed and the added value stays unchanged', () => {
       const shared = {}
       Object.defineProperty(proto, 'patched', {
         value: shared,
         configurable: true,
         writable: true,
       })
-      expect(() => parseFormData([['patched.x', '1']])).toThrow(
-        new ForbiddenKeyError('patched'),
-      )
-      expect(() => parseFormData([['a.patched', '1']])).toThrow(
-        new ForbiddenKeyError('a.patched'),
-      )
+      expect(
+        parseFormData([
+          ['patched.x', '1'],
+          ['a.patched', '1'],
+        ]),
+      ).toStrictEqual({a: {}})
       expect(shared).toStrictEqual({})
+    })
+
+    it('is removed without calling its setter', () => {
+      const values: Array<unknown> = []
+      Object.defineProperty(proto, 'patched', {
+        get: () => values,
+        set: (value: unknown) => {
+          values.push(value)
+        },
+        configurable: true,
+      })
+      expect(parseFormData([['a.patched', '1']])).toStrictEqual({a: {}})
+      expect(values).toStrictEqual([])
+    })
+
+    it('is removed when it is read-only', () => {
+      Object.defineProperty(proto, 'patched', {
+        value: 'fixed',
+        configurable: true,
+        writable: false,
+      })
+      expect(parseFormData([['a.patched', '1']])).toStrictEqual({a: {}})
     })
   })
 })

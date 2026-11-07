@@ -12,7 +12,7 @@ type Data = string | Array<Data> | {[key: string]: Data}
 
 // Every key matching this pattern must round-trip. It can't produce a name
 // from Object.prototype (those are camelCase, start with `_`, or are longer),
-// so no rejected key is generated. Rejected keys are tested in `index.ts`.
+// so no rejected or removed key is generated. Those are tested in `index.ts`.
 const keyArb = fc.stringMatching(/^[a-z][a-z0-9_]{0,7}$/)
 
 // Containers are never empty: an empty object or array produces no entries,
@@ -97,6 +97,37 @@ function thrownBy(fn: () => unknown): unknown {
   }
 }
 
+// The parsed result, or the error with `name` replaced by `NAME`, after
+// replacing `NAME` in the paths with `name`.
+function outcomeWithName(entries: Array<Entry>, name: string): unknown {
+  const named = entries.map(([path, value]): Entry => [
+    path.split('NAME').join(name),
+    value,
+  ])
+  try {
+    return parseFormData(named)
+  } catch (error) {
+    return error instanceof Error
+      ? `${error.constructor.name}: ${error.message.split(name).join('NAME')}`
+      : error
+  }
+}
+
+// Removes the key `from` from every object in `value` and renames `from` to
+// `to` inside the other keys (`azz` => `atoString`).
+function replaceKey(value: unknown, from: string, to: string): unknown {
+  if (Array.isArray(value)) return value.map(item => replaceKey(item, from, to))
+  if (typeof value !== 'object' || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== from)
+      .map(([key, item]) => [
+        key.split(from).join(to),
+        replaceKey(item, from, to),
+      ]),
+  )
+}
+
 function isNoneOrLibraryError(error: unknown): boolean {
   return error === undefined || LIBRARY_ERRORS.some(cls => error instanceof cls)
 }
@@ -166,6 +197,23 @@ describe('properties', () => {
           for (const key of added) Reflect.deleteProperty(Object.prototype, key)
           expect(added).toStrictEqual([])
         }
+      }),
+    )
+  })
+
+  // An error that depended on the name would tell the client which
+  // properties exist on the server's `Object.prototype`.
+  it('treats a name on Object.prototype like an unused name, then removes it', () => {
+    const pathWithNameArb = fc
+      .array(fc.oneof(pathTokenArb, fc.constant('NAME')), {maxLength: 12})
+      .map(tokens => tokens.join(''))
+    fc.assert(
+      fc.property(entriesArb(pathWithNameArb), entries => {
+        const parseWith = (name: string): unknown =>
+          outcomeWithName(entries, name)
+        expect(parseWith('toString')).toStrictEqual(
+          replaceKey(parseWith('zz'), 'zz', 'toString'),
+        )
       }),
     )
   })

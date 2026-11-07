@@ -72,12 +72,10 @@ export class MixedArrayError extends Error {
   }
 }
 /**
- * Thrown when an object path part is `__proto__`, `constructor`, `prototype`,
- * or the name of any property on `Object.prototype` at parse time
- * (`toString`, `hasOwnProperty`, ..., including properties added by a newer
- * runtime or by other code). The first three could modify `Object.prototype`.
- * The others would shadow built-in methods on the parsed object, or be read as
- * an existing value. The names are rejected at any position in the path.
+ * Thrown when an object path part is `__proto__`, `constructor` or
+ * `prototype`, which could modify `Object.prototype`. The names are rejected
+ * at any position in the path. Other names on `Object.prototype` (`toString`,
+ * ...) are removed from the result instead (see `parseFormData`).
  *
  * @example
  * ```ts
@@ -85,14 +83,6 @@ export class MixedArrayError extends Error {
  * formData.append('__proto__.polluted', 'yes')
  * parseFormData(formData)
  * // throws ForbiddenKeyError('__proto__')
- * ```
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('user.toString', 'x')
- * parseFormData(formData)
- * // throws ForbiddenKeyError('user.toString')
  * ```
  */
 export class ForbiddenKeyError extends Error {
@@ -107,11 +97,10 @@ export class ForbiddenKeyError extends Error {
 // (e.g. `node --disable-proto=delete`).
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
-function isForbiddenKey(key: string): boolean {
-  return (
-    FORBIDDEN_OBJECT_KEYS.has(key) ||
-    Object.getOwnPropertyDescriptor(Object.prototype, key) !== undefined
-  )
+// Any property on `Object.prototype` at parse time, including ones added by a
+// newer runtime or by other code.
+function isPrototypeKey(key: string): boolean {
+  return Object.getOwnPropertyDescriptor(Object.prototype, key) !== undefined
 }
 
 type JsonObject = {[Key in string]?: JsonValue}
@@ -381,21 +370,42 @@ function handlePathPart(
   pathPart: PathPart,
   currentPathObject: JsonArray | JsonObject,
   arraysWithOrder: Set<JsonArray>,
+  prototypeKeys: Array<[JsonObject, string]>,
 ): [
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
 ] {
   if (pathPart.type === 'object') {
-    if (isForbiddenKey(pathPart.path)) {
+    const key = pathPart.path
+    if (FORBIDDEN_OBJECT_KEYS.has(key)) {
       throw new ForbiddenKeyError(pathPart.pathToPart)
     }
     if (Array.isArray(currentPathObject)) {
       throw new DuplicateKeyError(pathPart.pathToPart)
     }
     const currentObject = currentPathObject
+    // Only own properties are existing values, so an inherited `toString`
+    // isn't read as one.
+    const value = Object.prototype.hasOwnProperty.call(currentObject, key)
+      ? currentObject[key]
+      : undefined
     return [
-      currentObject[pathPart.path],
-      val => (currentObject[pathPart.path] = val),
+      value,
+      val => {
+        if (!isPrototypeKey(key)) {
+          currentObject[key] = val
+          return
+        }
+        // Defined instead of assigned, so a setter or read-only property on
+        // `Object.prototype` isn't used. It's removed before returning.
+        Object.defineProperty(currentObject, key, {
+          value: val,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        })
+        prototypeKeys.push([currentObject, key])
+      },
     ]
   }
   if (!Array.isArray(currentPathObject)) {
@@ -507,9 +517,15 @@ function handlePathPart(
  * - e.g. `a[0]` and `a[]`
  * - e.g. `a[]` and `a[0]`
  * @throws `ForbiddenKeyError` if an object path part is `__proto__`,
- * `constructor`, `prototype` or the name of a property on `Object.prototype`
+ * `constructor` or `prototype`
  * - e.g. `__proto__.polluted`
- * - e.g. `user.toString`
+ *
+ * Any other object path part named like a property on `Object.prototype`
+ * (`toString`, `hasOwnProperty`, ...) is removed from the result together with
+ * its value. It's parsed like any other key first, so it causes the same errors
+ * as an unused name: an error doesn't tell the client which properties exist
+ * on the server's `Object.prototype`.
+ * - e.g. `user.toString` => `{user: {}}`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,
@@ -522,6 +538,9 @@ export function parseFormData(
 
   // all arrays we need to squash (in place) later
   const arraysWithOrder: Set<Array<JsonValue>> = new Set()
+  // Keys named like a property on `Object.prototype`. They're parsed like any
+  // other key, so they cause the same errors, and removed at the end.
+  const prototypeKeys: Array<[JsonObject, string]> = []
 
   for (const entry of Array.from(formData)) {
     if (removeEmptyString && entry[1] === '') continue
@@ -535,6 +554,7 @@ export function parseFormData(
         pathPart,
         currentPathObject,
         arraysWithOrder,
+        prototypeKeys,
       )
 
       if (pathParts.length - 1 === idx) {
@@ -563,6 +583,7 @@ export function parseFormData(
     // array.flat(0) will remove all empty slots (e.g. [0, , 1] => [0, 1])
     orderedArray.splice(0, orderedArray.length, ...orderedArray.flat(0))
   }
+  for (const [object, key] of prototypeKeys) Reflect.deleteProperty(object, key)
 
   return result
 }
