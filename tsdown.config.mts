@@ -17,10 +17,7 @@ const umd = {
   format: 'umd',
   globalName: 'parseNestedFormData',
   sourcemap: true,
-  outputOptions: {
-    esModule: true,
-    globals: {'@remix-run/web-file': 'RemixRunWebFile'},
-  },
+  outputOptions: {esModule: true},
 } satisfies UserConfig
 
 const config: UserConfig[] = defineConfig([

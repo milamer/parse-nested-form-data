@@ -38,6 +38,7 @@ object out of the values. You can tell the parser to do not parse empty values.
   - [Null](#null)
   - [Array](#array)
   - [Object](#object)
+  - [Files](#files)
 - [Basic Usage](#basic-usage)
   - [Transform values](#transform-values)
 - [Advanced usage](#advanced-usage)
@@ -212,6 +213,23 @@ parseFormData(formData)
 //     b: '2',
 //   },
 // }
+```
+
+### Files
+
+`File` values are returned as they are, whether they are native or come from a
+polyfill such as `@remix-run/web-file`. A file is a leaf value, so a path can't
+continue below it:
+
+```ts
+const formData = new FormData()
+formData.append('avatar', new File(['...'], 'avatar.png'))
+parseFormData(formData)
+// { avatar: File }
+
+formData.append('avatar.name', 'me.png')
+parseFormData(formData)
+// throws DuplicateKeyError('avatar')
 ```
 
 ## Basic Usage
