@@ -473,8 +473,8 @@ function handlePathPart(
  *
  * @param {Iterable<[string, string | File]>} formData - an iterator of an [`path`, `value`] tuple
  * - `path` := `^(\+|\-|\&)?([^\.]+?(\[\d*\])*)(\.[^\.]+?(\[\d*\])*)*$` (e.g. `+a[][1].b`)
- * - `value` := `string` or `File` (native or polyfilled `File`/`Blob` values
- *   are kept as they are)
+ * - `value` := `string` or `File` (native or polyfilled `File` values are kept
+ *   as they are)
  * @param {ParseFormDataOptions} options - options for parsing the form data
  * - `transformEntry` - a function to transform the path and the value before
  *    inserting the value at the path in the resulting object (default: `defaultTransform`)

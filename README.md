@@ -217,9 +217,9 @@ parseFormData(formData)
 
 ### Files
 
-`File` and `Blob` values are returned as they are, whether they are native or
-come from a polyfill such as `@remix-run/web-file`. A file is a leaf value, so a
-path can't continue below it:
+`File` values are returned as they are, whether they are native or come from a
+polyfill such as `@remix-run/web-file`. A file is a leaf value, so a path can't
+continue below it:
 
 ```ts
 const formData = new FormData()
