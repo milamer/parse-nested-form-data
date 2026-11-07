@@ -3,7 +3,6 @@ import {describe, expect, it} from 'vitest'
 import {
   DuplicateKeyError,
   ForbiddenKeyError,
-  InvalidPathError,
   MixedArrayError,
   parseFormData,
 } from '../'
@@ -103,12 +102,7 @@ const entriesArb = (
 ): fc.Arbitrary<Array<Entry>> =>
   fc.array(fc.tuple(pathArb, fc.string()), {maxLength: 6})
 
-const LIBRARY_ERRORS = [
-  DuplicateKeyError,
-  MixedArrayError,
-  ForbiddenKeyError,
-  InvalidPathError,
-]
+const LIBRARY_ERRORS = [DuplicateKeyError, MixedArrayError, ForbiddenKeyError]
 
 function thrownBy(fn: () => unknown): unknown {
   try {
@@ -128,6 +122,19 @@ describe('properties', () => {
     fc.assert(
       fc.property(rootArb, keyStyleArb, (root, keyStyle) => {
         expect(parseFormData(toEntries('', root, keyStyle))).toStrictEqual(root)
+      }),
+    )
+  })
+
+  it('uses the text in brackets as the key', () => {
+    // Starts like `keyArb`, so it's never an array index or a forbidden name,
+    // and may contain `.`, which only a bracket key can hold.
+    const bracketKeyArb = fc.stringMatching(/^[a-z][a-z0-9_.]{0,7}$/)
+    fc.assert(
+      fc.property(bracketKeyArb, fc.string(), (key, value) => {
+        expect(parseFormData([[`a[${key}]`, value]])).toStrictEqual({
+          a: {[key]: value},
+        })
       }),
     )
   })

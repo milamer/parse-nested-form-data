@@ -103,27 +103,6 @@ export class ForbiddenKeyError extends Error {
   }
 }
 
-/**
- * Thrown when a bracket key contains `.`, `[` or `]`. A bracket key is the
- * text inside `[...]` that isn't an array index (`a[foo]` is the same as
- * `a.foo`).
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('a[foo.bar]', 'x')
- * parseFormData(formData)
- * // throws InvalidPathError('a[foo.bar]')
- * ```
- */
-export class InvalidPathError extends Error {
-  key: string
-  constructor(key: string) {
-    super(`Invalid path at path part ${key}`)
-    this.key = key
-  }
-}
-
 // Rejected even when a runtime doesn't define them on `Object.prototype`
 // (e.g. `node --disable-proto=delete`).
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
@@ -298,16 +277,10 @@ type PathPart = {
   default: JsonObject | JsonArray
   pathToPart: string
 }
-// A path part is followed by `.`, `[` or the end of the path. Alternatives:
-// - `array`: digits (or nothing) before `]`, an array index or a push
-// - `key`: a bracket key, i.e. the text up to `]` right after a `[` that
-//   follows a path part (validated in `extractPathParts`). It can't start
-//   with `.` or `[`, which are skipped after a `[` (`a[[0]` and `a[.[0]` are
-//   `a[0]`).
-// - otherwise an object key up to the next `.` or `[`
-const PATH_PART_RE =
-  /(?:(?<array>\d*)\]|(?<=[^.[]\[)(?<key>[^.[][\s\S]*?)\]|[^.[]+)(?=[.[]|$)/g
-const INVALID_BRACKET_KEY_RE = /[.[\]]/
+// The start or end of the path (`undefined`), `.` and `[` delimit path parts.
+function isBoundary(char: string | undefined): boolean {
+  return char === undefined || char === '.' || char === '['
+}
 
 /**
  *
@@ -354,25 +327,65 @@ const INVALID_BRACKET_KEY_RE = /[.[\]]/
  *
  */
 function extractPathParts(path: string): Array<PathPart> {
-  const parts: Array<PathPart> = []
-  for (const match of path.matchAll(PATH_PART_RE)) {
-    const {array, key} = {...match.groups}
-    const end = match.index + match[0].length
-    const pathToPart = path.slice(0, end)
-    if (key !== undefined) {
-      if (INVALID_BRACKET_KEY_RE.test(key)) {
-        throw new InvalidPathError(pathToPart)
-      }
-      // The part before `[key]` holds an object, not an array. A bracket key
-      // always follows a part, so `slice(-1)` has exactly one element.
-      for (const previous of parts.slice(-1)) previous.default = {}
+  // `closing[i]` is the index of the `]` that closes the `[` at `i`, found
+  // by nesting like qs (`a[b[c]]`: the last `]` closes the first `[`).
+  const closing: Array<number> = []
+  const opening: Array<number> = []
+  for (let idx = 0; idx < path.length; idx++) {
+    if (path[idx] === '[') {
+      opening.push(idx)
+    } else if (path[idx] === ']') {
+      const start = opening.pop()
+      if (start !== undefined) closing[start] = idx
     }
+  }
+
+  const parts: Array<PathPart> = []
+  const addPart = (key: string, type: PathPart['type'], end: number): void => {
     parts.push({
-      path: array ?? key ?? match[0],
-      type: array === undefined ? 'object' : 'array',
+      path: key,
+      type,
       default: path[end] === '[' ? [] : {},
-      pathToPart,
+      pathToPart: path.slice(0, end),
     })
+  }
+
+  let idx = 0
+  while (idx < path.length) {
+    if (isBoundary(path[idx])) {
+      // A bracket key: `[` after a path part, a matching `]` followed by a
+      // boundary, and text that isn't an array index. Text starting with `.`
+      // or `[` is skipped like other boundaries (`a[.0]` is `a[0]`).
+      const close = closing[idx]
+      if (
+        close !== undefined &&
+        !isBoundary(path[idx - 1]) &&
+        !isBoundary(path[idx + 1]) &&
+        isBoundary(path[close + 1]) &&
+        !/^\d*$/.test(path.slice(idx + 1, close))
+      ) {
+        // The part before `[key]` holds an object, not an array. A bracket
+        // key always follows a part, so `slice(-1)` has exactly one element.
+        for (const previous of parts.slice(-1)) previous.default = {}
+        addPart(path.slice(idx + 1, close), 'object', close + 1)
+        idx = close + 1
+      } else {
+        idx++
+      }
+      continue
+    }
+
+    // An array index (`0]`, `]`) or a key up to the next boundary.
+    let end = idx
+    while (/\d/.test(path.charAt(end))) end++
+    if (path[end] === ']' && isBoundary(path[end + 1])) {
+      addPart(path.slice(idx, end), 'array', end + 1)
+      idx = end + 1
+    } else {
+      while (!isBoundary(path[end])) end++
+      addPart(path.slice(idx, end), 'object', end)
+      idx = end
+    }
   }
   return parts
 }
@@ -464,7 +477,8 @@ function handlePathPart(
  *  - `&` => parse to `Boolean`
  *
  * - `.` between path parts => nest into `objects`
- * - `[key]` after path part => nest into `objects`, same as `.key`
+ * - `[key]` after path part => nest into `objects`, same as `.key`; the text
+ *   in brackets is the key as it is (`a[b.c]` => key `b.c`)
  * - `[\d*]` after path part => push to array in order `\d` or push to end if `[]`
  *
 
@@ -533,8 +547,8 @@ function handlePathPart(
  * ```
  *
  * @param {Iterable<[string, string | File]>} formData - an iterator of an [`path`, `value`] tuple
- * - `path` := `^(\+|\-|\&)?([^\.]+?(\[[^.[\]]*\])*)(\.[^\.]+?(\[[^.[\]]*\])*)*$`
- *   (e.g. `+a[][1].b[c]`)
+ * - `path` := an optional prefix (`+`, `-`, `&`), then keys joined by `.`,
+ *   followed by any number of `[]`, `[\d+]` or `[key]` (e.g. `+a[][1].b[c]`)
  * - `value` := `string` or `File` (native or polyfilled `File` values are kept
  *   as they are)
  * @param {ParseFormDataOptions} options - options for parsing the form data
@@ -554,8 +568,6 @@ function handlePathPart(
  * - e.g. `__proto__.polluted`
  * - e.g. `user.toString`
  * - e.g. `user[toString]`
- * @throws `InvalidPathError` if a bracket key contains `.`, `[` or `]`
- * - e.g. `a[b.c]`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,
