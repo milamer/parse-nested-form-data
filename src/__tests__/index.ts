@@ -497,10 +497,17 @@ function fileFromNativeFormData(): File {
 }
 
 // The input type only allows `File`, but JavaScript callers, custom iterables
-// and `transformEntry` can still pass a plain `Blob`.
-function blobAsFile(blob: Blob): File {
+// and `transformEntry` can still pass a plain `Blob` or a File from another
+// realm.
+function asFile(value: object): File {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
-  return blob as File
+  return value as File
+}
+
+// Stands in for a File from another realm (e.g. an iframe): it isn't an
+// instance of any `File` class here, only its tag says "File".
+function fileFromOtherRealm(): File {
+  return asFile({[Symbol.toStringTag]: 'File'})
 }
 
 describe('File and Blob values', () => {
@@ -511,8 +518,9 @@ describe('File and Blob values', () => {
     ['subclass of remix File', () => new RemixFileSubclass(['x'], 'f.txt')],
     ['native File', () => new globalThis.File(['x'], 'f.txt')],
     ['File from a native FormData', fileFromNativeFormData],
-    ['native Blob', () => blobAsFile(new globalThis.Blob(['x']))],
-    ['remix Blob', () => blobAsFile(new RemixBlob(['x']))],
+    ['native Blob', () => asFile(new globalThis.Blob(['x']))],
+    ['remix Blob', () => asFile(new RemixBlob(['x']))],
+    ['File-tagged value from another realm', fileFromOtherRealm],
   ]
 
   it.each(fileLikeValues)(
@@ -541,7 +549,7 @@ describe('File and Blob values', () => {
   )
 
   it.each(fileLikeValues)(
-    '%s at `+a`, `&a`, `-a` -> NaN, false, null',
+    '%s at `+n`, `&b`, `-z` -> NaN, false, null',
     (_name, create) => {
       const value = create()
       const result = parseFormData([
