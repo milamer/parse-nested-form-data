@@ -464,13 +464,14 @@ describe('prototype pollution protection', () => {
     )
   })
 
-  // The cases below pin the invariant for the array branch. Today the regex
-  // restricts array-index segments to digit characters, so a forbidden key
-  // can't reach the array branch (the cases parse as an object pathPart with
-  // a trailing `]` and trip the array/object duplicate-key guard). If the
-  // regex is ever loosened to accept arbitrary content inside `[...]`, these
-  // tests will start failing and the array branch will need its own
-  // forbidden-key check.
+  // The cases below pin the invariant for the array branch, which has no
+  // forbidden-key check. The regex restricts array-index segments to digit
+  // characters, so no forbidden name (these three or any other
+  // `Object.prototype` name) can reach the array branch: the cases parse as an
+  // object pathPart with a trailing `]` and trip the array/object
+  // duplicate-key guard. If the regex is ever loosened to accept arbitrary
+  // content inside `[...]`, these tests will start failing and the array
+  // branch will need its own forbidden-key check.
   // NOTE: `a[name]` is not a supported path yet (see issue #2), so this
   // currently fails as a DuplicateKeyError before the forbidden-key check runs.
   it.each(['__proto__', 'constructor', 'prototype'])(
@@ -502,14 +503,24 @@ function parseErrorWithoutPrototypeProperty(key: string): unknown {
 }
 
 describe('Object.prototype names', () => {
-  it.each([
-    ['toString', 'toString'],
-    ['a.toString', 'a.toString'],
-    ['toString.a', 'toString'],
-    ['a[0].valueOf', 'a[0].valueOf'],
-  ])('%s -> ForbiddenKeyError(%s)', (path, key) => {
+  // Fields with these names would shadow built-in methods on the parsed
+  // object (e.g. `hasOwnProperty`), so they are rejected.
+  const names = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
+  it.each(
+    names.flatMap(name => [
+      [name, name],
+      [`a.${name}`, `a.${name}`],
+      [`${name}.a`, name],
+    ]),
+  )('%s -> ForbiddenKeyError(%s)', (path, key) => {
     expect(() => parseFormData([[path, 'x']])).toThrow(
       new ForbiddenKeyError(key),
+    )
+  })
+
+  it('rejects a name after an array part', () => {
+    expect(() => parseFormData([['a[0].valueOf', 'x']])).toThrow(
+      new ForbiddenKeyError('a[0].valueOf'),
     )
   })
 

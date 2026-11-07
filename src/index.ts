@@ -72,14 +72,12 @@ export class MixedArrayError extends Error {
   }
 }
 /**
- * Thrown when a path part is the name of a property on `Object.prototype`
- * when parsing (`toString`, `valueOf`, `hasOwnProperty`, ..., including
- * properties added by a newer runtime or by code that patches it), or one of
- * `__proto__`, `constructor` and `prototype`, which are rejected on every
- * runtime. `__proto__`, `constructor` and `prototype` could reach and modify
- * `Object.prototype`. The other names would shadow built-in methods that
- * generic code calls on the parsed object, or an added property would be read
- * as an existing value. The names are rejected at any position in the path.
+ * Thrown when an object path part is `__proto__`, `constructor`, `prototype`,
+ * or the name of any property on `Object.prototype` at parse time
+ * (`toString`, `hasOwnProperty`, ..., including properties added by a newer
+ * runtime or by other code). The first three could modify `Object.prototype`.
+ * The others would shadow built-in methods on the parsed object, or be read as
+ * an existing value. The names are rejected at any position in the path.
  *
  * @example
  * ```ts
@@ -387,10 +385,10 @@ function handlePathPart(
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
 ] {
-  if (isForbiddenKey(pathPart.path)) {
-    throw new ForbiddenKeyError(pathPart.pathToPart)
-  }
   if (pathPart.type === 'object') {
+    if (isForbiddenKey(pathPart.path)) {
+      throw new ForbiddenKeyError(pathPart.pathToPart)
+    }
     if (Array.isArray(currentPathObject)) {
       throw new DuplicateKeyError(pathPart.pathToPart)
     }
@@ -508,6 +506,10 @@ function handlePathPart(
  * defined and at a later path part an ordered array is defined or vice versa
  * - e.g. `a[0]` and `a[]`
  * - e.g. `a[]` and `a[0]`
+ * @throws `ForbiddenKeyError` if an object path part is `__proto__`,
+ * `constructor`, `prototype` or the name of a property on `Object.prototype`
+ * - e.g. `__proto__.polluted`
+ * - e.g. `user.toString`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,
