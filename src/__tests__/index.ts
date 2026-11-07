@@ -486,8 +486,9 @@ describe('prototype pollution protection', () => {
 })
 
 // Parses `key` with that property removed from Object.prototype and returns
-// the thrown error. The property is restored before returning, so a failing
-// assertion can't leave the prototype broken for later tests.
+// the thrown error, or an error naming `key` if nothing was thrown. The
+// property is restored before returning, so a failing assertion can't leave the
+// prototype broken for later tests.
 function parseErrorWithoutPrototypeProperty(key: string): unknown {
   const proto: object = Object.prototype
   const descriptor = Object.getOwnPropertyDescriptor(proto, key)
@@ -499,7 +500,7 @@ function parseErrorWithoutPrototypeProperty(key: string): unknown {
   } finally {
     if (descriptor) Object.defineProperty(proto, key, descriptor)
   }
-  return undefined
+  return new Error(`expected ${key} to be rejected`)
 }
 
 describe('Object.prototype names', () => {
