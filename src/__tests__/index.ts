@@ -493,31 +493,80 @@ describe('bracket keys', () => {
     expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
   })
 
-  // The first `[` has no matching `]`, so it isn't a bracket key and is
-  // skipped like a `.`.
-  it.each(['a[[0]', 'a[.[0]'])('parses %s as an array', path => {
-    expect(parseFormData([[path, 'x']])).toStrictEqual({a: ['x']})
-  })
-
-  // Without a matching `]` followed by `.`, `[` or the end of the path, the
-  // brackets aren't a bracket key: `a` becomes an array and the rest an object
-  // key, which conflict.
+  // A `[` that no `]` closes stays in the key.
   it.each([
-    ['a[0', 'a[0'],
-    ['a[0]b', 'a[0]b'],
-    ['a[fo]o]', 'a[fo]o]'],
-    ['a[b]]', 'a[b]]'],
-  ])('%s -> DuplicateKeyError(%s)', (path, key) => {
-    expect(() => parseFormData([[path, 'x']])).toThrow(
-      new DuplicateKeyError(key),
-    )
+    ['a[b[c]', {a: {'b[c': 'x'}}],
+    ['a[[0]', {a: {'[0': 'x'}}],
+    ['a[.[0]', {a: {'.[0': 'x'}}],
+    ['a[[[0]', {a: {'[[0': 'x'}}],
+    ['a[b[c].d', {a: {'b[c': {d: 'x'}}}],
+    ['a[b[c]x[y]', {a: {'b[c]x[y': 'x'}}],
+  ])(
+    'ends a bracket key that no `]` closes at the last `]`: %s',
+    (path, expected) => {
+      expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+    },
+  )
+
+  it.each([
+    ['[0', {'[0': 'x'}],
+    ['a[0', {'a[0': 'x'}],
+    ['a[0.b', {'a[0': {b: 'x'}}],
+    ['x.y[', {x: {'y[': 'x'}}],
+    ['a[b][', {a: {b: {'[': 'x'}}}],
+  ])('keeps a `[` without a `]` after it in the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
   })
 
-  it('keeps a leading `[key]` as a key with `]`', () => {
-    expect(parseFormData([['[foo]', 'x']])).toStrictEqual({'foo]': 'x'})
+  it.each([
+    ['[foo]', {foo: 'x'}],
+    ['.[foo]', {foo: 'x'}],
+    ['a.[b]', {a: {b: 'x'}}],
+    ['a.[0]', {a: ['x']}],
+    ['a[b].[c]', {a: {b: {c: 'x'}}}],
+  ])(
+    'parses a bracket part after `.` or at the start: %s',
+    (path, expected) => {
+      expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+    },
+  )
+
+  it.each([
+    ['a[0]b', {a: [{b: 'x'}]}],
+    ['a[b]c[d]', {a: {b: {c: {d: 'x'}}}}],
+    ['a[0]b[1]', {a: [{b: ['x']}]}],
+  ])('starts a new key after `]`: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
   })
 
-  // Each shape forces a lookahead for a matching `]`. A scan that restarts
+  // Only the `]` that closes a bracket part ends it.
+  it.each([
+    ['a]b', {'a]b': 'x'}],
+    ['0]', {'0]': 'x'}],
+    ['a.]', {a: {']': 'x'}}],
+    ['a[b]]', {a: {b: {']': 'x'}}}],
+    ['a[fo]o]', {a: {fo: {'o]': 'x'}}}],
+    ['a[]]', {a: [{']': 'x'}]}],
+  ])('keeps any other `]` in the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  it.each([
+    ['a.x', 'a[0', {a: {x: '1'}, 'a[0': '2'}],
+    ['a.x', 'a[b]]', {a: {x: '1', b: {']': '2'}}}],
+  ])(
+    'gives a malformed path the same parts with or without earlier entries: %s, %s',
+    (first, second, expected) => {
+      expect(
+        parseFormData([
+          [first, '1'],
+          [second, '2'],
+        ]),
+      ).toStrictEqual(expected)
+    },
+  )
+
+  // Each shape needs the matching `]` of every `[`. Searching for it again
   // for every `[` takes seconds at this length.
   it.each([
     ['a[b]', 'x'],

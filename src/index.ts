@@ -266,11 +266,6 @@ type PathPart = {
   default: JsonObject | JsonArray
   pathToPart: string
 }
-// The start or end of the path (`undefined`), `.` and `[` delimit path parts.
-function isBoundary(char: string | undefined): boolean {
-  return char === undefined || char === '.' || char === '['
-}
-
 /**
  *
  * Transforms a FormData path into an array of `PathPart`s.
@@ -316,65 +311,69 @@ function isBoundary(char: string | undefined): boolean {
  *
  */
 function extractPathParts(path: string): Array<PathPart> {
-  // `closing[i]` is the index of the `]` that closes the `[` at `i`, found
-  // by nesting like qs (`a[b[c]]`: the last `]` closes the first `[`).
-  const closing: Array<number> = []
-  const opening: Array<number> = []
+  // Brackets nest like in qs (`a[b[c]]`: the last `]` closes the first `[`).
+  // A `[` that no `]` closes stays in the key: its bracket key ends at the
+  // last `]` (`a[[0]` => key `[0`), and without a `]` after it, it's part of
+  // the key around it (`a[0` => key `a[0`).
+  const open: Array<number> = []
   for (let idx = 0; idx < path.length; idx++) {
-    if (path[idx] === '[') {
-      opening.push(idx)
-    } else if (path[idx] === ']') {
-      const start = opening.pop()
-      if (start !== undefined) closing[start] = idx
-    }
+    if (path[idx] === '[') open.push(idx)
+    else if (path[idx] === ']') open.pop()
   }
+  const unclosed = new Set(open)
+  const lastClose = path.lastIndexOf(']')
 
   const parts: Array<PathPart> = []
-  const addPart = (key: string, type: PathPart['type'], end: number): void => {
-    parts.push({
+  let previous: PathPart | undefined
+  // Start of the current part, and how many `[` of a bracket part are open.
+  let start = 0
+  let depth = 0
+  const addPart = (
+    end: number,
+    pathEnd: number,
+    type: PathPart['type'],
+  ): void => {
+    const key = path.slice(start, end)
+    // Empty keys come from `a..b`, `a.`, `.a` or a `.` or `[` after `]`.
+    if (key === '' && type === 'object') return
+    // The previous part holds an array if this part is an array index.
+    if (previous && type === 'array') previous.default = []
+    previous = {
       path: key,
       type,
-      default: path[end] === '[' ? [] : {},
-      pathToPart: path.slice(0, end),
-    })
+      default: {},
+      pathToPart: path.slice(0, pathEnd),
+    }
+    parts.push(previous)
   }
 
-  let idx = 0
-  while (idx < path.length) {
-    if (isBoundary(path[idx])) {
-      // A bracket key: `[` after a path part, a matching `]` followed by a
-      // boundary, and text that isn't an array index. The text is the key as
-      // it is (`a[.0]` is the key `.0`).
-      const close = closing[idx]
-      if (
-        close !== undefined &&
-        !isBoundary(path[idx - 1]) &&
-        isBoundary(path[close + 1]) &&
-        !/^\d*$/.test(path.slice(idx + 1, close))
-      ) {
-        // The part before `[key]` holds an object, not an array. A bracket
-        // key always follows a part, so `slice(-1)` has exactly one element.
-        for (const previous of parts.slice(-1)) previous.default = {}
-        addPart(path.slice(idx + 1, close), 'object', close + 1)
-        idx = close + 1
-      } else {
-        idx++
+  for (let idx = 0; idx < path.length; idx++) {
+    const char = path[idx]
+    if (depth === 0) {
+      // `.` and `[` end a key and `[` opens a bracket part, unless no `]`
+      // follows. A `]` that doesn't close a bracket part is part of the key.
+      if (char === '.' || (char === '[' && idx < lastClose)) {
+        addPart(idx, idx, 'object')
+        start = idx + 1
+        if (char === '[' && !unclosed.has(idx)) {
+          depth = 1
+        } else if (char === '[') {
+          addPart(lastClose, lastClose + 1, 'object')
+          start = lastClose + 1
+          idx = lastClose
+        }
       }
-      continue
-    }
-
-    // An array index (`0]`, `]`) or a key up to the next boundary.
-    let end = idx
-    while (/\d/.test(path.charAt(end))) end++
-    if (path[end] === ']' && isBoundary(path[end + 1])) {
-      addPart(path.slice(idx, end), 'array', end + 1)
-      idx = end + 1
-    } else {
-      while (!isBoundary(path[end])) end++
-      addPart(path.slice(idx, end), 'object', end)
-      idx = end
+    } else if (char === '[') {
+      depth++
+    } else if (char === ']' && --depth === 0) {
+      // The `]` that closes the bracket part: digits or nothing is an array
+      // index, anything else is the key as it is (`a[b.c]` => key `b.c`).
+      const key = path.slice(start, idx)
+      addPart(idx, idx + 1, /^\d*$/.test(key) ? 'array' : 'object')
+      start = idx + 1
     }
   }
+  addPart(path.length, path.length, 'object')
   return parts
 }
 

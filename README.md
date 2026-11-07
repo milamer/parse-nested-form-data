@@ -250,6 +250,15 @@ parseFormData(formData)
 // }
 ```
 
+Paths with misplaced brackets are parsed without an error:
+
+- A `[` that no `]` closes stays in the key: `a[[0]` is the key `[0` in `a`, and
+  `a[0` is the key `a[0`.
+- A `]` that doesn't close a `[` is part of the key: `a]b` is the key `a]b`.
+- Text after `]` is the next key: `a[0]b` is `a[0].b`.
+- Empty keys are skipped: `a..b`, `a.[b]` and `a[b].[c]` are `a.b`, `a.b` and
+  `a.b.c`, and `[a]` is `a`.
+
 `__proto__`, `constructor` and `prototype` can't be used as an object path part,
 at any position, with or without brackets, because they could modify
 `Object.prototype`. `parseFormData` throws a `ForbiddenKeyError` with the path
