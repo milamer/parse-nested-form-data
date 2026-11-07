@@ -354,13 +354,12 @@ function extractPathParts(path: string): Array<PathPart> {
   while (idx < path.length) {
     if (isBoundary(path[idx])) {
       // A bracket key: `[` after a path part, a matching `]` followed by a
-      // boundary, and text that isn't an array index. Text starting with `.`
-      // or `[` is skipped like other boundaries (`a[.0]` is `a[0]`).
+      // boundary, and text that isn't an array index. The text is the key as
+      // it is (`a[.0]` is the key `.0`).
       const close = closing[idx]
       if (
         close !== undefined &&
         !isBoundary(path[idx - 1]) &&
-        !isBoundary(path[idx + 1]) &&
         isBoundary(path[close + 1]) &&
         !/^\d*$/.test(path.slice(idx + 1, close))
       ) {

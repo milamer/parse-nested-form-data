@@ -127,9 +127,9 @@ describe('properties', () => {
   })
 
   it('uses the text in brackets as the key', () => {
-    // Starts like `keyArb`, so it's never an array index or a forbidden name,
-    // and may contain `.`, which only a bracket key can hold.
-    const bracketKeyArb = fc.stringMatching(/^[a-z][a-z0-9_.]{0,7}$/)
+    // Starts with a letter or `.`, so it's never an array index or a
+    // forbidden name, and may contain `.`, which only a bracket key can hold.
+    const bracketKeyArb = fc.stringMatching(/^[a-z.][a-z0-9_.]{0,7}$/)
     fc.assert(
       fc.property(bracketKeyArb, fc.string(), (key, value) => {
         expect(parseFormData([[`a[${key}]`, value]])).toStrictEqual({
