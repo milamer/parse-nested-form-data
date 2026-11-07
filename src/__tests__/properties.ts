@@ -88,6 +88,19 @@ const entriesArb = (
 
 const LIBRARY_ERRORS = [DuplicateKeyError, MixedArrayError, ForbiddenKeyError]
 
+function thrownBy(fn: () => unknown): unknown {
+  try {
+    fn()
+    return undefined
+  } catch (error) {
+    return error
+  }
+}
+
+function isNoneOrLibraryError(error: unknown): boolean {
+  return error === undefined || LIBRARY_ERRORS.some(cls => error instanceof cls)
+}
+
 describe('properties', () => {
   it('round-trips nested data through dot and `[i]` paths', () => {
     fc.assert(
@@ -157,16 +170,15 @@ describe('properties', () => {
     )
   })
 
+  // Inputs here are small (at most 6 entries, indices below 1000). Large
+  // inputs crash with a RangeError, which is covered in `known bugs`.
   it('only throws the library errors', () => {
     fc.assert(
-      // Returning false makes fast-check report the shrunk counterexample.
       fc.property(entriesArb(anyPathArb), entries => {
-        try {
-          parseFormData(entries)
-          return true
-        } catch (error) {
-          return LIBRARY_ERRORS.some(cls => error instanceof cls)
-        }
+        // Unlike returning false, the failure message shows the error.
+        expect(thrownBy(() => parseFormData(entries))).toSatisfy(
+          isNoneOrLibraryError,
+        )
       }),
     )
   })

@@ -20,7 +20,15 @@
     "typescript/strict-void-return": "off",
     "vitest/expect-expect": [
       "error",
-      {"assertFunctionNames": ["expect", "fc.assert"]}
+      {
+        "assertFunctionNames": [
+          "expect",
+          "expectTypeOf",
+          "assert",
+          "assertType",
+          "fc.assert"
+        ]
+      }
     ]
   },
   "ignorePatterns": ["dist", "coverage"],
