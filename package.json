@@ -66,9 +66,6 @@
     "typescript": "7.0.2",
     "vitest": "^5.1.0"
   },
-  "peerDependencies": {
-    "@remix-run/web-file": ">=3.0.0"
-  },
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"
