@@ -50,7 +50,6 @@
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@remix-run/web-file": "^3.0.2",
-    "@remix-run/web-form-data": "^3.0.3",
     "@size-limit/preset-small-lib": "^14.3.0",
     "@vitest/coverage-v8": "^5.1.0",
     "doctoc": "^2.5.0",

@@ -1,5 +1,4 @@
 import {afterEach, describe, expect, it} from 'vitest'
-import {FormData} from '@remix-run/web-form-data'
 import {Blob as RemixBlob, File} from '@remix-run/web-file'
 import {
   DuplicateKeyError,
