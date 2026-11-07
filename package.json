@@ -69,11 +69,6 @@
   "peerDependencies": {
     "@remix-run/web-file": ">=3.0.0"
   },
-  "peerDependenciesMeta": {
-    "@remix-run/web-form-data": {
-      "optional": true
-    }
-  },
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"

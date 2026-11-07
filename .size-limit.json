@@ -2,13 +2,11 @@
   {
     "name": "esm (import *)",
     "path": "dist/parse-nested-form-data.esm.js",
-    "ignore": ["@remix-run/web-file"],
     "limit": "1 kB"
   },
   {
     "name": "umd.min",
     "path": "dist/parse-nested-form-data.umd.min.js",
-    "ignore": ["@remix-run/web-file"],
     "limit": "1.5 kB"
   }
 ]

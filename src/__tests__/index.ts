@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, it} from 'vitest'
 import {FormData} from '@remix-run/web-form-data'
-import {File} from '@remix-run/web-file'
+import {Blob as RemixBlob, File} from '@remix-run/web-file'
 import {
   DuplicateKeyError,
   ForbiddenKeyError,
@@ -481,6 +481,76 @@ describe('prototype pollution protection', () => {
       formData.append(`a[${key}]`, 'yes')
       expect(() => parseFormData(formData)).toThrow(DuplicateKeyError)
       expect(Reflect.get(proto, 'polluted')).toBeUndefined()
+    },
+  )
+})
+
+class RemixFileSubclass extends File {}
+
+function fileFromNativeFormData(): File {
+  const formData = new globalThis.FormData()
+  formData.append('a', new globalThis.Blob(['x']))
+  const value = formData.get('a')
+  if (!(value instanceof globalThis.File)) {
+    throw new TypeError('expected FormData to turn the Blob into a File')
+  }
+  return value
+}
+
+// The input type only allows `File`, but JavaScript callers, custom iterables
+// and `transformEntry` can still pass a plain `Blob`.
+function blobAsFile(blob: Blob): File {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
+  return blob as File
+}
+
+describe('File and Blob values', () => {
+  // Each case creates a fresh value, so one test can't modify the value
+  // another test sees.
+  const fileLikeValues: Array<[name: string, create: () => File]> = [
+    ['remix File', () => new File(['x'], 'f.txt')],
+    ['subclass of remix File', () => new RemixFileSubclass(['x'], 'f.txt')],
+    ['native File', () => new globalThis.File(['x'], 'f.txt')],
+    ['File from a native FormData', fileFromNativeFormData],
+    ['native Blob', () => blobAsFile(new globalThis.Blob(['x']))],
+    ['remix Blob', () => blobAsFile(new RemixBlob(['x']))],
+  ]
+
+  it.each(fileLikeValues)(
+    '%s at `a` alone is returned as the same, unmodified object',
+    (_name, create) => {
+      const value = create()
+      const ownKeysBefore = Reflect.ownKeys(value)
+      const result = parseFormData([['a', value]])
+      expect(result['a']).toBe(value)
+      expect(Reflect.ownKeys(value)).toEqual(ownKeysBefore)
+    },
+  )
+
+  it.each(fileLikeValues)(
+    '%s at `a`, then `a.b` -> throw DuplicateKeyError("a") without modifying the value',
+    (_name, create) => {
+      const value = create()
+      expect(() =>
+        parseFormData([
+          ['a', value],
+          ['a.b', 'x'],
+        ]),
+      ).toThrow(new DuplicateKeyError('a'))
+      expect(value).not.toHaveProperty('b')
+    },
+  )
+
+  it.each(fileLikeValues)(
+    '%s at `+a`, `&a`, `-a` -> NaN, false, null',
+    (_name, create) => {
+      const value = create()
+      const result = parseFormData([
+        ['+n', value],
+        ['&b', value],
+        ['-z', value],
+      ])
+      expect(result).toEqual({n: Number.NaN, b: false, z: null})
     },
   )
 })

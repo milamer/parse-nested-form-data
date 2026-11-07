@@ -5,8 +5,6 @@
  * @author Christian Schurr <chris@schurr.dev>
  */
 
-import {File} from '@remix-run/web-file'
-
 /**
  * Thrown when a path is used multiple times or has missmatching path parts.
  *
@@ -109,12 +107,22 @@ type JsonValue =
   | File
 type JsonLeafValue = Exclude<JsonValue, JsonArray | JsonObject>
 
+/**
+ * Detects `File` and `Blob` values by their `Symbol.toStringTag`, which works
+ * for native instances, polyfills (e.g. `@remix-run/web-file`) and values from
+ * other realms, where `instanceof` would fail.
+ */
+function isFileLike(val: unknown): boolean {
+  const tag = Object.prototype.toString.call(val)
+  return tag === '[object File]' || tag === '[object Blob]'
+}
+
 function isJsonObject(val: JsonValue): val is JsonObject {
   return (
     typeof val === 'object' &&
     !Array.isArray(val) &&
     val !== null &&
-    !(val instanceof File)
+    !isFileLike(val)
   )
 }
 
@@ -465,7 +473,8 @@ function handlePathPart(
  *
  * @param {Iterable<[string, string | File]>} formData - an iterator of an [`path`, `value`] tuple
  * - `path` := `^(\+|\-|\&)?([^\.]+?(\[\d*\])*)(\.[^\.]+?(\[\d*\])*)*$` (e.g. `+a[][1].b`)
- * - `value` := `string` or `File`
+ * - `value` := `string` or `File` (native or polyfilled `File`/`Blob` values
+ *   are kept as they are)
  * @param {ParseFormDataOptions} options - options for parsing the form data
  * - `transformEntry` - a function to transform the path and the value before
  *    inserting the value at the path in the resulting object (default: `defaultTransform`)
