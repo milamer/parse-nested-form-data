@@ -313,7 +313,8 @@ function extractPathParts(path: string): Array<PathPart> {
   // Brackets nest like in qs (`a[b[c]]`: the last `]` closes the first `[`).
   // A `[` that no `]` closes stays in the key: its bracket key ends at the
   // last `]` (`a[[0]` => key `[0`), and without a `]` after it, it's part of
-  // the key around it (`a[0` => key `a[0`).
+  // the key around it (`a[0` => key `a[0`). Likewise, a `]` that closes no `[`
+  // stays in the bracket key right before it (`a[b]]` => key `b]`).
   const open: Array<number> = []
   for (let idx = 0; idx < path.length; idx++) {
     if (path[idx] === '[') open.push(idx)
@@ -365,8 +366,11 @@ function extractPathParts(path: string): Array<PathPart> {
     } else if (char === '[') {
       depth++
     } else if (char === ']' && --depth === 0) {
-      // The `]` that closes the bracket part: digits or nothing is an array
-      // index, anything else is the key as it is (`a[b.c]` => key `b.c`).
+      // The `]` that closes the bracket part. A `]` right after it closes no
+      // `[`, so it stays in the key (`a[b]]` => key `b]`).
+      while (path[idx + 1] === ']') idx++
+      // Digits or nothing is an array index, anything else is the key as it
+      // is (`a[b.c]` => key `b.c`).
       const key = path.slice(start, idx)
       addPart(idx, idx + 1, /^\d*$/.test(key) ? 'array' : 'object')
       start = idx + 1

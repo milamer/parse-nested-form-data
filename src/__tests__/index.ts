@@ -544,16 +544,32 @@ describe('bracket keys', () => {
     ['a]b', {'a]b': 'x'}],
     ['0]', {'0]': 'x'}],
     ['a.]', {a: {']': 'x'}}],
-    ['a[b]]', {a: {b: {']': 'x'}}}],
     ['a[fo]o]', {a: {fo: {'o]': 'x'}}}],
-    ['a[]]', {a: [{']': 'x'}]}],
   ])('keeps any other `]` in the key: %s', (path, expected) => {
     expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
   })
 
+  // Like a `[` that no `]` closes, a `]` that closes no `[` stays in the
+  // bracket key next to it.
+  it.each([
+    ['a[b]]', {a: {'b]': 'x'}}],
+    ['a[b]]]', {a: {'b]]': 'x'}}],
+    ['a[b]].c', {a: {'b]': {c: 'x'}}}],
+    ['a[b]][c]', {a: {'b]': {c: 'x'}}}],
+    ['a[b]]c', {a: {'b]': {c: 'x'}}}],
+    ['a[[0]]]', {a: {'[0]]': 'x'}}],
+    ['a[0]]', {a: {'0]': 'x'}}],
+    ['a[]]', {a: {']': 'x'}}],
+  ])(
+    'keeps a `]` right after a bracket part in its key: %s',
+    (path, expected) => {
+      expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+    },
+  )
+
   it.each([
     ['a.x', 'a[0', {a: {x: '1'}, 'a[0': '2'}],
-    ['a.x', 'a[b]]', {a: {x: '1', b: {']': '2'}}}],
+    ['a.x', 'a[b]]', {a: {x: '1', 'b]': '2'}}],
   ])(
     'gives a malformed path the same parts with or without earlier entries: %s, %s',
     (first, second, expected) => {
