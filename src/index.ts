@@ -310,73 +310,51 @@ type PathPart = {
  *
  */
 function extractPathParts(path: string): Array<PathPart> {
-  // Brackets nest like in qs (`a[b[c]]`: the last `]` closes the first `[`).
-  // A `[` that no `]` closes stays in the key: its bracket key ends at the
-  // last `]` (`a[[0]` => key `[0`), and without a `]` after it, it's part of
-  // the key around it (`a[0` => key `a[0`). Likewise, a `]` that closes no `[`
-  // stays in the bracket key right before it (`a[b]]` => key `b]`).
+  // Where the bracket part of each `[` ends. Brackets nest like in qs
+  // (`a[b[c]]`: the last `]` closes the first `[`).
+  const closeOf = new Map<number, number>()
   const open: Array<number> = []
   for (let idx = 0; idx < path.length; idx++) {
     if (path[idx] === '[') open.push(idx)
-    else if (path[idx] === ']') open.pop()
+    else if (path[idx] === ']' && open.length > 0) closeOf.set(open.pop()!, idx)
   }
-  const unclosed = new Set(open)
   const lastClose = path.lastIndexOf(']')
 
   const parts: Array<PathPart> = []
-  let previous: PathPart | undefined
-  // Start of the current part, and how many `[` of a bracket part are open.
-  let start = 0
-  let depth = 0
-  const addPart = (
-    end: number,
-    pathEnd: number,
-    type: PathPart['type'],
-  ): void => {
-    const key = path.slice(start, end)
+  const addPart = (key: string, type: PathPart['type'], end: number): void => {
     // Empty keys come from `a..b`, `a.`, `.a` or a `.` or `[` after `]`.
     if (key === '' && type === 'object') return
-    // The previous part holds an array if this part is an array index.
-    if (previous && type === 'array') previous.default = []
-    previous = {
-      path: key,
-      type,
-      default: {},
-      pathToPart: path.slice(0, pathEnd),
-    }
-    parts.push(previous)
+    parts.push({path: key, type, default: {}, pathToPart: path.slice(0, end)})
   }
 
+  let start = 0
   for (let idx = 0; idx < path.length; idx++) {
-    const char = path[idx]
-    if (depth === 0) {
-      // `.` and `[` end a key and `[` opens a bracket part, unless no `]`
-      // follows. A `]` that doesn't close a bracket part is part of the key.
-      if (char === '.' || (char === '[' && idx < lastClose)) {
-        addPart(idx, idx, 'object')
-        start = idx + 1
-        if (char === '[' && !unclosed.has(idx)) {
-          depth = 1
-        } else if (char === '[') {
-          addPart(lastClose, lastClose + 1, 'object')
-          start = lastClose + 1
-          idx = lastClose
-        }
-      }
-    } else if (char === '[') {
-      depth++
-    } else if (char === ']' && --depth === 0) {
-      // The `]` that closes the bracket part. A `]` right after it closes no
-      // `[`, so it stays in the key (`a[b]]` => key `b]`).
-      while (path[idx + 1] === ']') idx++
+    // A `[` that no `]` closes ends at the last `]` (`a[[0]` => key `[0`).
+    // Without a `]` after it, it's part of the key (`a[0` => key `a[0`), like
+    // a `]` that closes no `[` (`a]b` => key `a]b`).
+    const close = path[idx] === '[' ? (closeOf.get(idx) ?? lastClose) : -1
+    if (path[idx] !== '.' && close < idx) continue
+
+    addPart(path.slice(start, idx), 'object', idx)
+    if (close > idx) {
+      // A `]` right after the bracket part closes no `[`, so it stays in the
+      // key (`a[b]]` => key `b]`).
+      let end = close
+      while (path[end + 1] === ']') end++
       // Digits or nothing is an array index, anything else is the key as it
       // is (`a[b.c]` => key `b.c`).
-      const key = path.slice(start, idx)
-      addPart(idx, idx + 1, /^\d*$/.test(key) ? 'array' : 'object')
-      start = idx + 1
+      const key = path.slice(idx + 1, end)
+      addPart(key, /^\d*$/.test(key) ? 'array' : 'object', end + 1)
+      idx = end
     }
+    start = idx + 1
   }
-  addPart(path.length, path.length, 'object')
+  addPart(path.slice(start), 'object', path.length)
+
+  // A part holds an array if the next part is an array index.
+  parts.forEach((part, idx) => {
+    if (parts[idx + 1]?.type === 'array') part.default = []
+  })
   return parts
 }
 
