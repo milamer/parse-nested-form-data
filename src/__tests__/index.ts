@@ -283,6 +283,18 @@ describe('depth option', () => {
     )
   })
 
+  it.each([
+    ['toString', 1],
+    ['a.toString', 2],
+    ['a[toString]', 2],
+    ['a.toString.b', 3],
+  ])(
+    'removes %s with depth %d without throwing, like for any other name',
+    (path, depth) => {
+      expect(parseFormData([[path, 'x']], {depth})).toStrictEqual({})
+    },
+  )
+
   it('throws for an entry that would be removed, like for any other name', () => {
     expect(() => parseFormData([['a.toString.b', 'x']], {depth: 2})).toThrow(
       new DepthLimitError('a.toString.b'),

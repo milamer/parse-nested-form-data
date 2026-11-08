@@ -44,6 +44,7 @@ object out of the values. You can tell the parser to do not parse empty values.
 - [Advanced usage](#advanced-usage)
   - [Options](#options)
   - [removeEmptyString: `[boolean]`](#removeemptystring-boolean)
+  - [depth: `[number]`](#depth-number)
   - [transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`](#transformentry-entry-path-string-value-string--file-defaulttransform-defaulttransform--path-string-value-jsonleafvalue)
 - [Issues](#issues)
   - [🐛 Bugs](#-bugs)
