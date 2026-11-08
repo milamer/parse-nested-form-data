@@ -37,15 +37,31 @@ const rootArb = fc.dictionary(keyArb, dataArb, {
   noNullPrototype: true,
 })
 
-function toEntries(path: string, data: Data): Array<Entry> {
+type KeyStyle = 'dot' | 'bracket'
+
+// `keyStyle` picks `a.key` or `a[key]` for each nested object key.
+function toEntries(
+  path: string,
+  data: Data,
+  keyStyle: (path: string, key: string) => KeyStyle = () => 'dot',
+): Array<Entry> {
   if (typeof data === 'string') return [[path, data]]
   if (Array.isArray(data)) {
-    return data.flatMap((item, idx) => toEntries(`${path}[${idx}]`, item))
+    return data.flatMap((item, idx) =>
+      toEntries(`${path}[${idx}]`, item, keyStyle),
+    )
   }
-  return Object.entries(data).flatMap(([key, item]) =>
-    toEntries(path === '' ? key : `${path}.${key}`, item),
-  )
+  return Object.entries(data).flatMap(([key, item]) => {
+    if (path === '') return toEntries(key, item, keyStyle)
+    const keyPath =
+      keyStyle(path, key) === 'dot' ? `${path}.${key}` : `${path}[${key}]`
+    return toEntries(keyPath, item, keyStyle)
+  })
 }
+
+const keyStyleArb = fc.func<[string, string], KeyStyle>(
+  fc.constantFrom('dot', 'bracket'),
+)
 
 const rootWithShuffledEntriesArb = rootArb.chain(root => {
   const entries = toEntries('', root)
@@ -151,10 +167,23 @@ function isNoneOrLibraryError(error: unknown): boolean {
 }
 
 describe('properties', () => {
-  it('round-trips nested data through dot and `[i]` paths', () => {
+  it('round-trips nested data through dot, `[key]` and `[i]` paths', () => {
     fc.assert(
-      fc.property(rootArb, root => {
-        expect(parseFormData(toEntries('', root))).toStrictEqual(root)
+      fc.property(rootArb, keyStyleArb, (root, keyStyle) => {
+        expect(parseFormData(toEntries('', root, keyStyle))).toStrictEqual(root)
+      }),
+    )
+  })
+
+  it('uses the text in brackets as the key', () => {
+    // Starts with a letter or `.`, so it's never an array index or a
+    // forbidden name, and may contain `.`, which only a bracket key can hold.
+    const bracketKeyArb = fc.stringMatching(/^[a-z.][a-z0-9_.]{0,7}$/)
+    fc.assert(
+      fc.property(bracketKeyArb, fc.string(), (key, value) => {
+        expect(parseFormData([[`a[${key}]`, value]])).toStrictEqual({
+          a: {[key]: value},
+        })
       }),
     )
   })

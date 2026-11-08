@@ -406,6 +406,191 @@ describe('complex examples', () => {
   })
 })
 
+describe('bracket keys', () => {
+  it('parses `a[foo]` like `a.foo`', () => {
+    expect(
+      parseFormData([
+        ['myField[foo]', '1'],
+        ['myField[bar]', '2'],
+      ]),
+    ).toStrictEqual({myField: {foo: '1', bar: '2'}})
+  })
+
+  it.each([
+    ['a[foo][0].bar', {a: {foo: [{bar: 'x'}]}}],
+    ['a[foo][]', {a: {foo: ['x']}}],
+    ['a[foo][bar]', {a: {foo: {bar: 'x'}}}],
+    ['a[foo].bar', {a: {foo: {bar: 'x'}}}],
+    ['a.b[foo]', {a: {b: {foo: 'x'}}}],
+    ['a[0][foo]', {a: [{foo: 'x'}]}],
+    ['a[][foo]', {a: [{foo: 'x'}]}],
+    ['a[f-o o]', {a: {'f-o o': 'x'}}],
+    ['a[0x]', {a: {'0x': 'x'}}],
+  ])('combines with other path parts: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  it('applies the value prefixes', () => {
+    expect(
+      parseFormData([
+        ['+a[num]', '1'],
+        ['&a[bool]', 'on'],
+        ['-a[nil]', 'x'],
+      ]),
+    ).toStrictEqual({a: {num: 1, bool: true, nil: null}})
+  })
+
+  it('merges with dot keys into the same object', () => {
+    expect(
+      parseFormData([
+        ['a.foo.x', '1'],
+        ['a[foo].y', '2'],
+        ['a[foo][z][]', '3'],
+        ['a.foo.z[]', '4'],
+      ]),
+    ).toStrictEqual({a: {foo: {x: '1', y: '2', z: ['3', '4']}}})
+  })
+
+  it.each([
+    ['a.foo', 'a[foo]', 'a[foo]'],
+    ['a[foo]', 'a.foo', 'a.foo'],
+    ['a[foo]', 'a[foo]', 'a[foo]'],
+    ['a[foo]', 'a[foo].bar', 'a[foo]'],
+    ['a[0]', 'a[foo]', 'a[foo]'],
+    ['a[]', 'a[foo]', 'a[foo]'],
+    ['a[foo]', 'a[0]', 'a[0]'],
+    ['a', 'a[foo]', 'a'],
+  ])('%s, %s -> DuplicateKeyError(%s)', (first, second, key) => {
+    expect(() =>
+      parseFormData([
+        [first, 'x'],
+        [second, 'y'],
+      ]),
+    ).toThrow(new DuplicateKeyError(key))
+  })
+
+  it.each([
+    ['a[foo.bar]', {a: {'foo.bar': 'x'}}],
+    ['a[foo[0]]', {a: {'foo[0]': 'x'}}],
+    ['a[b[c][d]]', {a: {'b[c][d]': 'x'}}],
+    ['a[foo][x.y].z', {a: {foo: {'x.y': {z: 'x'}}}}],
+    ['a[0][x.y]', {a: [{'x.y': 'x'}]}],
+    ['a[__proto__[x]]', {a: {'__proto__[x]': 'x'}}],
+  ])('uses the text in brackets as the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  it.each([
+    ['a[.]', {a: {'.': 'x'}}],
+    ['a[.0]', {a: {'.0': 'x'}}],
+    ['a[..0]', {a: {'..0': 'x'}}],
+    ['a[.b]', {a: {'.b': 'x'}}],
+    ['a[[0]]', {a: {'[0]': 'x'}}],
+    ['a[[x]]', {a: {'[x]': 'x'}}],
+    ['a[[0].b]', {a: {'[0].b': 'x'}}],
+    ['a[[b]][c]', {a: {'[b]': {c: 'x'}}}],
+  ])('uses text starting with `.` or `[` as the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  // A `[` that no `]` closes stays in the key.
+  it.each([
+    ['a[b[c]', {a: {'b[c': 'x'}}],
+    ['a[[0]', {a: {'[0': 'x'}}],
+    ['a[.[0]', {a: {'.[0': 'x'}}],
+    ['a[[[0]', {a: {'[[0': 'x'}}],
+    ['a[b[c].d', {a: {'b[c': {d: 'x'}}}],
+    ['a[b[c]x[y]', {a: {'b[c]x[y': 'x'}}],
+  ])(
+    'ends a bracket key that no `]` closes at the last `]`: %s',
+    (path, expected) => {
+      expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+    },
+  )
+
+  it.each([
+    ['[0', {'[0': 'x'}],
+    ['a[0', {'a[0': 'x'}],
+    ['a[0.b', {'a[0': {b: 'x'}}],
+    ['x.y[', {x: {'y[': 'x'}}],
+    ['a[b][', {a: {b: {'[': 'x'}}}],
+  ])('keeps a `[` without a `]` after it in the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  it.each([
+    ['[foo]', {foo: 'x'}],
+    ['.[foo]', {foo: 'x'}],
+    ['a.[b]', {a: {b: 'x'}}],
+    ['a.[0]', {a: ['x']}],
+    ['a[b].[c]', {a: {b: {c: 'x'}}}],
+  ])(
+    'parses a bracket part after `.` or at the start: %s',
+    (path, expected) => {
+      expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+    },
+  )
+
+  it.each([
+    ['a[0]b', {a: [{b: 'x'}]}],
+    ['a[b]c[d]', {a: {b: {c: {d: 'x'}}}}],
+    ['a[0]b[1]', {a: [{b: ['x']}]}],
+  ])('starts a new key after `]`: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  // Only the `]` that closes a bracket part ends it.
+  it.each([
+    ['a]b', {'a]b': 'x'}],
+    ['0]', {'0]': 'x'}],
+    ['a.]', {a: {']': 'x'}}],
+    ['a[b]]', {a: {b: {']': 'x'}}}],
+    ['a[b]]]', {a: {b: {']]': 'x'}}}],
+    ['a[b]]c', {a: {b: {']c': 'x'}}}],
+    ['a[b]].c', {a: {b: {']': {c: 'x'}}}}],
+    ['a[b]][c]', {a: {b: {']': {c: 'x'}}}}],
+    ['a[[0]]]', {a: {'[0]': {']': 'x'}}}],
+    ['a[fo]o]', {a: {fo: {'o]': 'x'}}}],
+    ['a[0]]', {a: [{']': 'x'}]}],
+    ['a[]]', {a: [{']': 'x'}]}],
+  ])('keeps any other `]` in the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
+  })
+
+  it.each([
+    ['a.x', 'a[0', {a: {x: '1'}, 'a[0': '2'}],
+    ['a.x', 'a[b]]', {a: {x: '1', b: {']': '2'}}}],
+  ])(
+    'gives a malformed path the same parts with or without earlier entries: %s, %s',
+    (first, second, expected) => {
+      expect(
+        parseFormData([
+          [first, '1'],
+          [second, '2'],
+        ]),
+      ).toStrictEqual(expected)
+    },
+  )
+
+  // Each shape needs the matching `]` of every `[`. Searching for it again
+  // for every `[` takes seconds at this length.
+  it.each([
+    ['a[b]', 'x'],
+    ['a[', ''],
+    ['a[0]b', ''],
+    ['a[b[', ']]'],
+  ])('parses a 200 000 character path of `%s` quickly', (unit, tail) => {
+    const path = unit.repeat(200_000 / unit.length) + tail
+    const start = performance.now()
+    try {
+      parseFormData([[path, 'x']])
+    } catch {
+      // Only the time matters here.
+    }
+    expect(performance.now() - start).toBeLessThan(500)
+  })
+})
+
 describe('prototype pollution protection', () => {
   const proto: object = Object.prototype
   afterEach(() => {
@@ -465,22 +650,18 @@ describe('prototype pollution protection', () => {
     )
   })
 
-  // The cases below pin the invariant for the array branch, which has no
-  // forbidden-key check. The regex restricts array-index segments to digit
-  // characters, so no forbidden name (these three or any other
-  // `Object.prototype` name) can reach the array branch: the cases parse as an
-  // object pathPart with a trailing `]` and trip the array/object
-  // duplicate-key guard. If the regex is ever loosened to accept arbitrary
-  // content inside `[...]`, these tests will start failing and the array
-  // branch will need its own forbidden-key check.
-  // NOTE: `a[name]` is not a supported path yet (see issue #2), so this
-  // currently fails as a DuplicateKeyError before the forbidden-key check runs.
+  // A bracket key is an object path part, so it goes through the same
+  // forbidden-key check as a dot key. Only digits inside `[...]` reach the
+  // array branch.
   it.each(['__proto__', 'constructor', 'prototype'])(
     'does not pollute via `a[%s]`',
     key => {
-      const formData = new FormData()
-      formData.append(`a[${key}]`, 'yes')
-      expect(() => parseFormData(formData)).toThrow(DuplicateKeyError)
+      expect(() => parseFormData([[`a[${key}]`, 'yes']])).toThrow(
+        new ForbiddenKeyError(`a[${key}]`),
+      )
+      expect(() => parseFormData([[`b[${key}].polluted`, 'yes']])).toThrow(
+        new ForbiddenKeyError(`b[${key}]`),
+      )
       expect(Reflect.get(proto, 'polluted')).toBeUndefined()
     },
   )
@@ -512,7 +693,14 @@ describe('Object.prototype names', () => {
     name => name !== '__proto__' && name !== 'constructor',
   )
   it.each(
-    names.flatMap(name => [name, `a.${name}`, `${name}.a`, `a[0].${name}`]),
+    names.flatMap(name => [
+      name,
+      `a.${name}`,
+      `${name}.a`,
+      `a[0].${name}`,
+      `a[${name}]`,
+      `a[${name}].b`,
+    ]),
   )('removes the entry %s', path => {
     const result = parseFormData([
       [path, 'x'],

@@ -44,7 +44,7 @@ object out of the values. You can tell the parser to do not parse empty values.
 - [Advanced usage](#advanced-usage)
   - [Options](#options)
   - [removeEmptyString: `[boolean]`](#removeemptystring-boolean)
-  - [transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => [string, string | JsonLeafValue]`](#transformentry-entry-path-string-value-string--file-defaulttransform-defaulttransform--string-string--jsonleafvalue)
+  - [transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`](#transformentry-entry-path-string-value-string--file-defaulttransform-defaulttransform--path-string-value-jsonleafvalue)
 - [Issues](#issues)
   - [🐛 Bugs](#-bugs)
   - [💡 Feature Requests](#-feature-requests)
@@ -75,6 +75,7 @@ The name prop is used to tell the parser how to create an object out of the
 values. The name prop is a string that can contain the following characters:
 
 - `.`: to create a nested object
+- `[$key]`: to create a nested object (same as `.$key`)
 - `[]`: to create an array (pushes value)
 - `[$order]`: to create an array (sets value at index and squashes array)
 - `&`: to transform the value to a boolean
@@ -215,9 +216,53 @@ parseFormData(formData)
 // }
 ```
 
+A key in brackets works the same as a key after a `.`, so `object[a]` and
+`object.a` refer to the same key. Only digits in brackets (`[0]`) create an
+array. Both forms can be mixed with each other and with arrays:
+
+```ts
+const formData = new FormData()
+formData.append('object[a]', '1')
+formData.append('object.b[0].c', '2')
+formData.append('object[b][1][c]', '3')
+parseFormData(formData)
+// {
+//   object: {
+//     a: '1',
+//     b: [{c: '2'}, {c: '3'}],
+//   },
+// }
+```
+
+The text in brackets is used as the key as it is, so it can contain `.`, `[` and
+`]` (brackets inside must be balanced):
+
+```ts
+const formData = new FormData()
+formData.append('object[a.b]', '1')
+formData.append('object[c[d]]', '2')
+parseFormData(formData)
+// {
+//   object: {
+//     'a.b': '1',
+//     'c[d]': '2',
+//   },
+// }
+```
+
+Paths with misplaced brackets are parsed without an error:
+
+- A `[` that no `]` closes stays in the key: `a[[0]` is the key `[0` in `a`, and
+  `a[0` is the key `a[0`.
+- A `]` that doesn't close a `[` is part of the key: `a]b` is the key `a]b`.
+- Text after `]` is the next key: `a[0]b` is `a[0].b`.
+- Empty keys are skipped: `a..b`, `a.[b]` and `a[b].[c]` are `a.b`, `a.b` and
+  `a.b.c`, and `[a]` is `a`.
+
 `__proto__`, `constructor` and `prototype` can't be used as an object path part,
-at any position, because they could modify `Object.prototype`. `parseFormData`
-throws a `ForbiddenKeyError` with the path up to that part:
+at any position, with or without brackets, because they could modify
+`Object.prototype`. `parseFormData` throws a `ForbiddenKeyError` with the path
+up to that part:
 
 ```ts
 const formData = new FormData()
@@ -270,7 +315,7 @@ formData.append('+a', '1')
 formData.append('&b', 'true')
 formData.append('-c', 'null')
 formData.append('d', 'foo')
-parseFormData(formData, defaultTransform)
+parseFormData(formData)
 // => {a: 1, b: true, c: null, d: 'foo'}
 ```
 
@@ -287,15 +332,7 @@ formData.append('b[0]', '4')
 formData.append('+b[100]', '5')
 parseFormData(formData)
 // {
-//   a: [
-//     {
-//       b: {
-//         c: '1',
-//         d: '2',
-//       },
-//     },
-//     '3',
-//   ],
+//   a: [{b: {c: '1'}}, {b: {d: '2'}}, '3'],
 //   b: ['4', 5],
 // }
 ```
@@ -321,20 +358,18 @@ parseFormData(formData, {removeEmptyString: true})
 // {foo: [{foo: 'test3', baz: '4'}, {bar: 'test2'}]}
 ```
 
-### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => [string, string | JsonLeafValue]`
+### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`
 
 ```ts
 const formData = new FormData()
 formData.append('a', 'a')
 formData.append('b', 'b')
 parseFormData(formData, {
-  transformEntry: ([path, value], defaultTransform) => {
+  transformEntry: (entry, defaultTransform) => {
+    const {path, value} = defaultTransform(entry)
     return {
       path,
-      value:
-        typeof value === 'string'
-          ? value.toUpperCase()
-          : defaultTransform(value),
+      value: typeof value === 'string' ? value.toUpperCase() : value,
     }
   },
 })

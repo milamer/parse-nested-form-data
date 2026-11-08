@@ -6,7 +6,7 @@
  */
 
 /**
- * Thrown when a path is used multiple times or has missmatching path parts.
+ * Thrown when a path is used multiple times or has mismatching path parts.
  *
  * @example
  * ```ts
@@ -24,6 +24,7 @@
  * formData.append('a', 'c')
  * parseFormData(formData)
  * // throws DuplicateKeyError('a')
+ * ```
  *
  * @example
  * ```ts
@@ -223,13 +224,11 @@ type DefaultTransform = typeof defaultTransform
  * formData.append('a', 'a')
  * formData.append('b', 'b')
  * parseFormData(formData, {
- *   transformEntry: ([path, value], defaultTransform) => {
+ *   transformEntry: (entry, defaultTransform) => {
+ *     const {path, value} = defaultTransform(entry)
  *     return {
  *       path,
- *       value:
- *         typeof value === 'string'
- *           ? value.toUpperCase()
- *           : defaultTransform(value),
+ *       value: typeof value === 'string' ? value.toUpperCase() : value,
  *     }
  *   },
  * })
@@ -247,7 +246,7 @@ export type ParseFormDataOptions = {
 /**
  * A parsed part of a FormData path. It consists of four parts:
  * @param path - the key to access the value in the intermediate result
- * @param type - the type of the path part (array - e.g. [\d*], or object .e.g. .key)
+ * @param type - the type of the path part (array - e.g. [\d*], or object .e.g. .key or [key])
  * @param default - the default value of the next path part ([] for array, {} for object)
  * @param pathToPart - the full path to the current path part
  *
@@ -255,7 +254,7 @@ export type ParseFormDataOptions = {
  * ```ts
  * const path = 'a[0].b'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
  * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[0]'},
  * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a[0].b'}]
  * ```
@@ -277,7 +276,7 @@ type PathPart = {
  * ```ts
  * const path = 'a[0].b'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
  * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[0]'},
  * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a[0].b'}]
  * ```
@@ -286,15 +285,24 @@ type PathPart = {
  * ```ts
  * const path = 'a.b'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: {}, pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: {}, pathToPart: 'a'},
  * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a.b'}]
+ * ```
+ *
+ * @example
+ * ```ts
+ * const path = 'a[b][0]'
+ * const result = extractPathParts(path)
+ * // => [{path: 'a', type: 'object', default: {}, pathToPart: 'a'},
+ * //     {path: 'b', type: 'object', default: [], pathToPart: 'a[b]'},
+ * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[b][0]'}]
  * ```
  *
  * @example
  * ```ts
  * const path = 'a[][0]'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
  * //     {path: '', type: 'array', default: [], pathToPart: 'a[]'},
  * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[][0]'}]
  * ```
@@ -302,36 +310,48 @@ type PathPart = {
  *
  */
 function extractPathParts(path: string): Array<PathPart> {
-  const re = /((?<array>\d*)\]|(?<pathPart>[^.[]+))(?<nextType>\[|\.|$)/g
+  // Where the bracket part of each `[` ends. Brackets nest like in qs
+  // (`a[b[c]]`: the last `]` closes the first `[`).
+  const closeOf = new Map<number, number>()
+  const open: Array<number> = []
+  for (let idx = 0; idx < path.length; idx++) {
+    if (path[idx] === '[') open.push(idx)
+    else if (path[idx] === ']' && open.length > 0) closeOf.set(open.pop()!, idx)
+  }
+  const lastClose = path.lastIndexOf(']')
 
-  return Array.from(path.matchAll(re)).map<PathPart>(match => {
-    // self casted RegexExpMatchArray to custom
-    // The regex guarantees exactly one of `array` / `pathPart` is set.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    const typedMatch = match as unknown as [string, string] &
-      RegExpExecArray & {
-        groups:
-          | {
-              pathPart: undefined
-              array: string
-              nextType: '[' | '.' | ''
-            }
-          | {
-              pathPart: string
-              array: undefined
-              nextType: '[' | '.' | ''
-            }
-      }
-    const {array, pathPart, nextType} = typedMatch.groups
-    const type = array === undefined ? 'object' : 'array'
-    const nextDefault = nextType === '[' ? [] : {}
-    return {
-      path: array ?? pathPart,
-      type,
-      default: nextDefault,
-      pathToPart: path.slice(0, typedMatch.index + typedMatch[1].length),
+  const parts: Array<PathPart> = []
+  const addPart = (key: string, type: PathPart['type'], end: number): void => {
+    // Empty keys come from `a..b`, `a.`, `.a` or a `.` or `[` after `]`.
+    if (key === '' && type === 'object') return
+    parts.push({path: key, type, default: {}, pathToPart: path.slice(0, end)})
+  }
+
+  let start = 0
+  for (let idx = 0; idx < path.length; idx++) {
+    // A `[` that no `]` closes ends at the last `]` (`a[[0]` => key `[0`).
+    // Without a `]` after it, it's part of the key (`a[0` => key `a[0`), like
+    // a `]` that closes no `[` (`a]b` => key `a]b`, `a[b]]` => key `]` in `b`).
+    const close = path[idx] === '[' ? (closeOf.get(idx) ?? lastClose) : -1
+    if (path[idx] !== '.' && close < idx) continue
+
+    addPart(path.slice(start, idx), 'object', idx)
+    if (close > idx) {
+      // Digits or nothing is an array index, anything else is the key as it
+      // is (`a[b.c]` => key `b.c`).
+      const key = path.slice(idx + 1, close)
+      addPart(key, /^\d*$/.test(key) ? 'array' : 'object', close + 1)
+      idx = close
     }
+    start = idx + 1
+  }
+  addPart(path.slice(start), 'object', path.length)
+
+  // A part holds an array if the next part is an array index.
+  parts.forEach((part, idx) => {
+    if (parts[idx + 1]?.type === 'array') part.default = []
   })
+  return parts
 }
 
 /**
@@ -445,9 +465,9 @@ function handlePathPart(
  *  - `&` => parse to `Boolean`
  *
  * - `.` between path parts => nest into `objects`
+ * - `[key]` after path part => nest into `objects`, same as `.key`; the text
+ *   in brackets is the key as it is (`a[b.c]` => key `b.c`)
  * - `[\d*]` after path part => push to array in order `\d` or push to end if `[]`
- *
-
  *
  * @example
  * ```ts
@@ -456,7 +476,7 @@ function handlePathPart(
  * formData.append('&b', 'true')
  * formData.append('-c', 'null')
  * formData.append('d', 'foo')
- * parseFormData(formData, defaultTransform)
+ * parseFormData(formData)
  * // => {a: 1, b: true, c: null, d: 'foo'}
  * ```
  *
@@ -471,12 +491,21 @@ function handlePathPart(
  * @example
  * ```ts
  * const formData = new FormData()
+ * formData.append('a[b]', 'foo')
+ * formData.append('a.c', 'bar')
+ * parseFormData(formData)
+ * // => {a: {b: 'foo', c: 'bar'}}
+ * ```
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
  * formData.append('a[0]', 'foo')
  * formData.append('a[1]', 'bar')
  * parseFormData(formData)
  * // => {a: ['foo', 'bar']}
  * ```
- * 
+ *
  * @example
  * ```ts
  * const formData = new FormData()
@@ -485,15 +514,20 @@ function handlePathPart(
  * parseFormData(formData)
  * // => {a: ['foo', 'bar']}
  * ```
- * 
+ *
  * @example
  * ```ts
  * const formData = new FormData()
  * formData.append('a[0]', 'foo')
- * parseFormData(formData, {transformEntry: (path, value) => {path, value: value + 'bar'}})
+ * parseFormData(formData, {
+ *   transformEntry: ([path, value]) => ({
+ *     path,
+ *     value: typeof value === 'string' ? value + 'bar' : value,
+ *   }),
+ * })
  * // => {a: ['foobar']}
  * ```
- * 
+ *
  * @example
  * ```ts
  * const formData = new FormData()
@@ -504,7 +538,9 @@ function handlePathPart(
  * ```
  *
  * @param {Iterable<[string, string | File]>} formData - an iterator of an [`path`, `value`] tuple
- * - `path` := `^(\+|\-|\&)?([^\.]+?(\[\d*\])*)(\.[^\.]+?(\[\d*\])*)*$` (e.g. `+a[][1].b`)
+ * - `path` := an optional prefix (`+`, `-`, `&`), then path parts: keys after
+ *   `.` or in brackets (`[key]`), and array parts `[]` or `[\d+]` (e.g.
+ *   `+a[][1].b[c]`)
  * - `value` := `string` or `File` (native or polyfilled `File` values are kept
  *   as they are)
  * @param {ParseFormDataOptions} options - options for parsing the form data
@@ -513,9 +549,14 @@ function handlePathPart(
  * - `removeEmptyString` - if `true` removes all entries where the value is an empty string
  * @returns {JsonObject} the parsed JSON object
  * @throws `DuplicateKeyError` if
- * - a path part is an object and the path part is already defined as an object
- * - a path part is an array and the path part is already defined as an array
- * @throws `MixedArrayError` if at a specific path part an unordered array is 
+ * - two entries set a value at the same path
+ *   - e.g. `a` and `a`, `a[0]` and `a[0]`, `a.b` and `a[b]`
+ * - an entry uses a path part as an object, array or value and another entry
+ *   uses it differently
+ *   - e.g. `a` and `a.b`, `a.b` and `a[]`, `a[]` and `a.b`
+ * - the path starts with an array part
+ *   - e.g. `[0]` or `[]`
+ * @throws `MixedArrayError` if at a specific path part an unordered array is
  * defined and at a later path part an ordered array is defined or vice versa
  * - e.g. `a[0]` and `a[]`
  * - e.g. `a[]` and `a[0]`
@@ -529,6 +570,7 @@ function handlePathPart(
  * as an unused name: an error doesn't tell the client which properties exist
  * on the server's `Object.prototype`.
  * - e.g. `user.toString` => `{}`
+ * - e.g. `user[toString]` => `{}`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,
