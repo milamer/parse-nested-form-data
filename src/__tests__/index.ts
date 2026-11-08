@@ -503,8 +503,10 @@ function parseErrorWithoutPrototypeProperty(key: string): unknown {
   return new Error(`expected ${key} to be rejected`)
 }
 
-// The error thrown for `paths` with `NAME` replaced by `name`, with `name` in
-// its message replaced by `NAME`, or undefined if nothing was thrown.
+// Parses `paths` with `name` filled in for the `NAME` placeholder and returns
+// the error message, or undefined if nothing was thrown. The message has the
+// placeholder back in place of `name`, so the errors for two names compare
+// equal when only the name differs.
 function errorWithName(paths: Array<string>, name: string): unknown {
   try {
     parseFormData(paths.map(path => [path.replace('NAME', name), 'x']))

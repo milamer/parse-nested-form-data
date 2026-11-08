@@ -97,8 +97,10 @@ function thrownBy(fn: () => unknown): unknown {
   }
 }
 
-// The parsed result, or the error with `name` replaced by `NAME`, after
-// replacing `NAME` in the paths with `name`.
+// Parses `entries` with `name` filled in for the `NAME` placeholder and returns
+// the result or the error message. The message has the placeholder back in
+// place of `name`, so the errors for two names compare equal when only the
+// name differs.
 function outcomeWithName(entries: Array<Entry>, name: string): unknown {
   const named = entries.map(([path, value]): Entry => [
     path.split('NAME').join(name),
