@@ -140,8 +140,10 @@ function withoutKey(value: unknown, name: string): unknown {
 // and the objects and arrays only they filled.
 function outcomeWithoutName(entries: Array<Entry>): unknown {
   const outcome = outcomeWithName(entries, 'zz')
-  if (typeof outcome === 'string') return outcome
-  return renameKeys(withoutKey(outcome, 'zz'), 'zz', 'toString')
+  if (!('result' in outcome)) return outcome
+  return {
+    result: renameKeys(withoutKey(outcome.result, 'zz'), 'zz', 'toString'),
+  }
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {

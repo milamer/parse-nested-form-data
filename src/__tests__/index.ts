@@ -592,8 +592,8 @@ describe('Object.prototype names', () => {
         name,
       )
     expect(outcomeWith('toString')).toStrictEqual(outcomeWith('unused'))
-    // An error message, not a result.
-    expect(outcomeWith('toString')).toBeTypeOf('string')
+    // An error, not a result.
+    expect(outcomeWith('toString')).toHaveProperty('error')
   })
 
   // Like `node --disable-proto=delete`, which removes `__proto__`.
