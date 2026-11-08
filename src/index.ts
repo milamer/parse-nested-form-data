@@ -323,10 +323,10 @@ function closeOf(path: string, open: number, lastClose: number): number {
  * Transforms a FormData path into an array of `PathPart`s.
  *
  * @param path - the path to extract the path parts from
- * @param maxParts - stop once there are this many path parts (default:
- * `Infinity`). A bracket part can add one more. The `default` of the last
- * returned part is only right if the path ends there.
+ * @param depth - the maximum number of path parts (default: `Infinity`)
  * @returns {Array<PathPart>} the extracted path parts
+ * @throws `DepthLimitError` if the path has more path parts than `depth`, at
+ * the first part over the limit
  *
  * @example
  * ```ts
@@ -365,18 +365,19 @@ function closeOf(path: string, open: number, lastClose: number): number {
  *
  *
  */
-function extractPathParts(path: string, maxParts = Infinity): Array<PathPart> {
+function extractPathParts(path: string, depth = Infinity): Array<PathPart> {
   const lastClose = path.lastIndexOf(']')
 
   const parts: Array<PathPart> = []
   const addPart = (key: string, type: PathPart['type'], end: number): void => {
     // Empty keys come from `a..b`, `a.`, `.a` or a `.` or `[` after `]`.
     if (key === '' && type === 'object') return
+    if (parts.length === depth) throw new DepthLimitError(path.slice(0, end))
     parts.push({path: key, type, default: {}, pathToPart: path.slice(0, end)})
   }
 
   let start = 0
-  for (let idx = 0; idx < path.length && parts.length < maxParts; idx++) {
+  for (let idx = 0; idx < path.length; idx++) {
     const close = path[idx] === '[' ? closeOf(path, idx, lastClose) : -1
     if (path[idx] !== '.' && close < idx) continue
 
@@ -390,9 +391,7 @@ function extractPathParts(path: string, maxParts = Infinity): Array<PathPart> {
     }
     start = idx + 1
   }
-  if (parts.length < maxParts) {
-    addPart(path.slice(start), 'object', path.length)
-  }
+  addPart(path.slice(start), 'object', path.length)
 
   // A part holds an array if the next part is an array index.
   parts.forEach((part, idx) => {
@@ -655,10 +654,7 @@ export function parseFormData(
     if (removeEmptyString && entry[1] === '') continue
 
     const {path, value} = transformEntry(entry, defaultTransform)
-    const pathParts = extractPathParts(path, depth + 1)
-    if (pathParts.length > depth) {
-      throw new DepthLimitError(pathParts[depth]!.pathToPart)
-    }
+    const pathParts = extractPathParts(path, depth)
     // Removed entries are still built like any other entry, so they cause the
     // same errors as an unused name, and undone below.
     const isRemoved = pathParts.some(
