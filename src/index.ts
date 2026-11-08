@@ -542,9 +542,15 @@ export function parseFormData(
   // all arrays we need to squash (in place) later
   const arraysWithOrder: Set<Array<JsonValue>> = new Set()
 
-  // What the removed entries created, as [parent, key, value], in order.
+  // What the removed entries created, in order. `container` is the object or
+  // array an entry created on its way to its value; it's undefined for the
+  // value itself.
   const createdByRemoved: Array<
-    [JsonObject | JsonArray, string | number, JsonValue]
+    [
+      parent: JsonObject | JsonArray,
+      key: string | number,
+      container: JsonObject | JsonArray | undefined,
+    ]
   > = []
 
   for (const entry of Array.from(formData)) {
@@ -572,7 +578,7 @@ export function parseFormData(
           throw new DuplicateKeyError(pathPart.pathToPart)
         }
         setNextPathValue(value)
-        if (isRemoved) createdByRemoved.push([parent, key, value])
+        if (isRemoved) createdByRemoved.push([parent, key, undefined])
       } else {
         if (
           nextPathValue !== undefined &&
@@ -592,17 +598,13 @@ export function parseFormData(
     })
   }
 
-  // Undo the removed entries, children before their parents. A kept entry
-  // always ends in a value, so a container that is empty now was only used by
-  // removed entries.
+  // Undo the removed entries, children before their parents. A value is
+  // always deleted, whatever it is. A container is deleted only if it's empty
+  // now: a kept entry always ends in a value, so an empty container was only
+  // used by removed entries.
   for (let idx = createdByRemoved.length - 1; idx >= 0; idx--) {
-    const [parent, key, value] = createdByRemoved[idx]!
-    if (
-      (isJsonObject(value) || Array.isArray(value)) &&
-      Object.keys(value).length > 0
-    ) {
-      continue
-    }
+    const [parent, key, container] = createdByRemoved[idx]!
+    if (container && Object.keys(container).length > 0) continue
     Reflect.deleteProperty(parent, key)
     // The hole is squashed below like the gaps in ordered arrays.
     if (Array.isArray(parent)) arraysWithOrder.add(parent)

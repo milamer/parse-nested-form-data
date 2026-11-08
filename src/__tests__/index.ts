@@ -573,6 +573,24 @@ describe('Object.prototype names', () => {
     expect(parseFormData(entries)).toStrictEqual(expected)
   })
 
+  // A transform in JS (or with a cast) can return an object or array as the
+  // value, which is removed like any other value.
+  it.each<[string, unknown]>([
+    ['toString', {k: 'x'}],
+    ['a.toString', {k: 'x'}],
+    ['toString', ['x']],
+    ['a[0].toString', ['x']],
+  ])('removes the entry %s with the value %j', (path, value) => {
+    const result = parseFormData([[path, 'x']], {
+      transformEntry: ([entryPath]) => ({
+        path: entryPath,
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
+        value: value as string,
+      }),
+    })
+    expect(result).toStrictEqual({})
+  })
+
   // The same errors as for an unused name, so an error doesn't tell the
   // client which names exist on Object.prototype.
   it.each([
