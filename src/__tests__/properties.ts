@@ -204,8 +204,9 @@ function respectsDepth(entries: Array<Entry>, depth: number): boolean {
 }
 
 // Whether `path` starts with `key` and nests deeper than `depth` when parsed
-// alone without a limit. A path that can't be built (a forbidden key) or is
-// removed (a name on `Object.prototype`) has no nesting to check.
+// alone without a limit. A path that can't be built (a forbidden key, or an
+// array part on the root like `[]a`) or is removed (a name on
+// `Object.prototype`) has no nesting to check.
 function isOverDepth(path: string, key: string, depth: number): boolean {
   if (!path.startsWith(key)) return false
   try {
@@ -216,7 +217,7 @@ function isOverDepth(path: string, key: string, depth: number): boolean {
     )
     return nesting === 0 || nesting > depth
   } catch (error) {
-    return error instanceof ForbiddenKeyError
+    return isNoneOrLibraryError(error)
   }
 }
 

@@ -323,8 +323,9 @@ function closeOf(path: string, open: number, lastClose: number): number {
  * Transforms a FormData path into an array of `PathPart`s.
  *
  * @param path - the path to extract the path parts from
- * @param maxParts - stop after this many path parts (default: `Infinity`).
- * The `default` of the last returned part is only right if the path ends there.
+ * @param maxParts - stop once there are this many path parts (default:
+ * `Infinity`). A bracket part can add one more. The `default` of the last
+ * returned part is only right if the path ends there.
  * @returns {Array<PathPart>} the extracted path parts
  *
  * @example
@@ -392,8 +393,6 @@ function extractPathParts(path: string, maxParts = Infinity): Array<PathPart> {
   if (parts.length < maxParts) {
     addPart(path.slice(start), 'object', path.length)
   }
-  // The bracket part can add one more after the limit was reached.
-  if (parts.length > maxParts) parts.length = maxParts
 
   // A part holds an array if the next part is an array index.
   parts.forEach((part, idx) => {
