@@ -74,8 +74,8 @@ export class MixedArrayError extends Error {
 /**
  * Thrown when an object path part is `__proto__`, `constructor` or
  * `prototype`, which could modify `Object.prototype`. The names are rejected
- * at any position in the path. Other names on `Object.prototype` (`toString`,
- * ...) are removed from the result instead (see `parseFormData`).
+ * at any position in the path. Entries with other names on `Object.prototype`
+ * (`toString`, ...) are removed instead (see `parseFormData`).
  *
  * @example
  * ```ts
@@ -370,7 +370,6 @@ function handlePathPart(
   pathPart: PathPart,
   currentPathObject: JsonArray | JsonObject,
   arraysWithOrder: Set<JsonArray>,
-  prototypeKeys: Array<[JsonObject, string]>,
 ): [
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
@@ -397,14 +396,14 @@ function handlePathPart(
           return
         }
         // Defined instead of assigned, so a setter or read-only property on
-        // `Object.prototype` isn't used. It's removed before returning.
+        // `Object.prototype` isn't used. This result is only used to find
+        // errors (see `parseFormData`).
         Object.defineProperty(currentObject, key, {
           value: val,
           writable: true,
           enumerable: true,
           configurable: true,
         })
-        prototypeKeys.push([currentObject, key])
       },
     ]
   }
@@ -520,12 +519,12 @@ function handlePathPart(
  * `constructor` or `prototype`
  * - e.g. `__proto__.polluted`
  *
- * Any other object path part named like a property on `Object.prototype`
- * (`toString`, `hasOwnProperty`, ...) is removed from the result together with
- * its value. It's parsed like any other key first, so it causes the same errors
+ * An entry with any other object path part named like a property on
+ * `Object.prototype` (`toString`, `hasOwnProperty`, ...) is removed, like `qs`
+ * does. It's parsed like any other entry first, so it causes the same errors
  * as an unused name: an error doesn't tell the client which properties exist
  * on the server's `Object.prototype`.
- * - e.g. `user.toString` => `{user: {}}`
+ * - e.g. `user.toString` => `{}`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,
@@ -534,18 +533,35 @@ export function parseFormData(
     transformEntry = defaultTransform,
   }: ParseFormDataOptions = {},
 ): JsonObject {
+  const entries: Array<{path: string; value: JsonLeafValue}> = []
+  for (const entry of Array.from(formData)) {
+    if (removeEmptyString && entry[1] === '') continue
+    entries.push(transformEntry(entry, defaultTransform))
+  }
+
+  // Built from all entries so `Object.prototype` names cause the same errors as
+  // unused names, then rebuilt without their entries if there are any.
+  const result = buildResult(entries)
+  const keptEntries = entries.filter(
+    ({path}) =>
+      !extractPathParts(path).some(
+        pathPart => pathPart.type === 'object' && isPrototypeKey(pathPart.path),
+      ),
+  )
+  return keptEntries.length === entries.length
+    ? result
+    : buildResult(keptEntries)
+}
+
+function buildResult(
+  entries: Array<{path: string; value: JsonLeafValue}>,
+): JsonObject {
   const result: JsonObject = {}
 
   // all arrays we need to squash (in place) later
   const arraysWithOrder: Set<Array<JsonValue>> = new Set()
-  // Keys named like a property on `Object.prototype`. They're parsed like any
-  // other key, so they cause the same errors, and removed at the end.
-  const prototypeKeys: Array<[JsonObject, string]> = []
 
-  for (const entry of Array.from(formData)) {
-    if (removeEmptyString && entry[1] === '') continue
-
-    const {path, value} = transformEntry(entry, defaultTransform)
+  for (const {path, value} of entries) {
     const pathParts = extractPathParts(path)
 
     let currentPathObject: JsonObject | JsonArray = result
@@ -554,7 +570,6 @@ export function parseFormData(
         pathPart,
         currentPathObject,
         arraysWithOrder,
-        prototypeKeys,
       )
 
       if (pathParts.length - 1 === idx) {
@@ -583,7 +598,6 @@ export function parseFormData(
     // array.flat(0) will remove all empty slots (e.g. [0, , 1] => [0, 1])
     orderedArray.splice(0, orderedArray.length, ...orderedArray.flat(0))
   }
-  for (const [object, key] of prototypeKeys) Reflect.deleteProperty(object, key)
 
   return result
 }

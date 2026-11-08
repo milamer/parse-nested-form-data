@@ -509,10 +509,10 @@ function parseErrorWithoutPrototypeProperty(key: string): unknown {
 // equal when only the name differs.
 function errorWithName(paths: Array<string>, name: string): unknown {
   try {
-    parseFormData(paths.map(path => [path.replace('NAME', name), 'x']))
+    parseFormData(paths.map(path => [path.split('NAME').join(name), 'x']))
   } catch (error) {
     return error instanceof Error
-      ? `${error.constructor.name}: ${error.message.replace(name, 'NAME')}`
+      ? `${error.constructor.name}: ${error.message.split(name).join('NAME')}`
       : error
   }
   return undefined
@@ -520,25 +520,47 @@ function errorWithName(paths: Array<string>, name: string): unknown {
 
 describe('Object.prototype names', () => {
   // Fields with these names would shadow built-in methods on the parsed
-  // object (e.g. `hasOwnProperty`), so they are removed. `__proto__` and
-  // `constructor` throw instead (see above).
+  // object (e.g. `hasOwnProperty`), so their entries are removed. `__proto__`
+  // and `constructor` throw instead (see above).
   const names = Object.getOwnPropertyNames(Object.prototype).filter(
     name => name !== '__proto__' && name !== 'constructor',
   )
   it.each(
-    names.flatMap(name => [
-      [name, {}],
-      [`a.${name}`, {a: {}}],
-      [`${name}.a`, {}],
-      [`a[0].${name}`, {a: [{}]}],
-    ]),
-  )('removes %s', (path, expected) => {
+    names.flatMap(name => [name, `a.${name}`, `${name}.a`, `a[0].${name}`]),
+  )('removes the entry %s', path => {
     const result = parseFormData([
       [path, 'x'],
       ['b', 'y'],
     ])
-    expect(result).toStrictEqual({...expected, b: 'y'})
-    expect(Object.prototype.hasOwnProperty.call(result, 'b')).toBe(true)
+    expect(result).toStrictEqual({b: 'y'})
+  })
+
+  // The same results as `qs`.
+  it.each<[Array<[string, string]>, object]>([
+    [
+      [
+        ['a.b', '1'],
+        ['a.toString.c', 'x'],
+      ],
+      {a: {b: '1'}},
+    ],
+    [
+      [
+        ['a[0].valueOf', 'x'],
+        ['a[1]', 'y'],
+      ],
+      {a: ['y']},
+    ],
+    [
+      [
+        ['a[]', '1'],
+        ['a[].toString', '2'],
+        ['a[]', '3'],
+      ],
+      {a: ['1', '3']},
+    ],
+  ])('keeps the other entries of %j', (entries, expected) => {
+    expect(parseFormData(entries)).toStrictEqual(expected)
   })
 
   // The same errors as for an unused name, so an error doesn't tell the
@@ -585,7 +607,7 @@ describe('Object.prototype names', () => {
           ['patched.x', '1'],
           ['a.patched', '1'],
         ]),
-      ).toStrictEqual({a: {}})
+      ).toStrictEqual({})
       expect(shared).toStrictEqual({})
     })
 
@@ -598,7 +620,7 @@ describe('Object.prototype names', () => {
         },
         configurable: true,
       })
-      expect(parseFormData([['a.patched', '1']])).toStrictEqual({a: {}})
+      expect(parseFormData([['a.patched', '1']])).toStrictEqual({})
       expect(values).toStrictEqual([])
     })
 
@@ -608,7 +630,7 @@ describe('Object.prototype names', () => {
         configurable: true,
         writable: false,
       })
-      expect(parseFormData([['a.patched', '1']])).toStrictEqual({a: {}})
+      expect(parseFormData([['a.patched', '1']])).toStrictEqual({})
     })
   })
 })

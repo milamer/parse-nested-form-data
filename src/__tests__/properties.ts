@@ -115,19 +115,41 @@ function outcomeWithName(entries: Array<Entry>, name: string): unknown {
   }
 }
 
-// Removes the key `from` from every object in `value` and renames `from` to
-// `to` inside the other keys (`azz` => `atoString`).
-function replaceKey(value: unknown, from: string, to: string): unknown {
-  if (Array.isArray(value)) return value.map(item => replaceKey(item, from, to))
+// Renames `from` to `to` inside every key in `value` (`azz` => `atoString`).
+function renameKeys(value: unknown, from: string, to: string): unknown {
+  if (Array.isArray(value)) return value.map(item => renameKeys(item, from, to))
   if (typeof value !== 'object' || value === null) return value
   return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => key !== from)
-      .map(([key, item]) => [
-        key.split(from).join(to),
-        replaceKey(item, from, to),
-      ]),
+    Object.entries(value).map(([key, item]) => [
+      key.split(from).join(to),
+      renameKeys(item, from, to),
+    ]),
   )
+}
+
+// Whether parsing `path` alone sets the key `name` at any depth.
+function setsKey(path: string, name: string): boolean {
+  const hasKey = (value: unknown): boolean =>
+    typeof value === 'object' &&
+    value !== null &&
+    Object.entries(value).some(([key, item]) => key === name || hasKey(item))
+  try {
+    return hasKey(parseFormData([[path, '']]))
+  } catch {
+    return false
+  }
+}
+
+// The outcome of `entries` with `toString` for `NAME` if it were an unused
+// name, except that entries setting it as a key are removed: the error for an
+// unused name, or else the result without those entries.
+function outcomeWithoutName(entries: Array<Entry>): unknown {
+  const outcome = outcomeWithName(entries, 'zz')
+  if (typeof outcome === 'string') return outcome
+  const kept = entries.filter(
+    ([path]) => !setsKey(path.split('NAME').join('zz'), 'zz'),
+  )
+  return renameKeys(outcomeWithName(kept, 'zz'), 'zz', 'toString')
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {
@@ -205,16 +227,14 @@ describe('properties', () => {
 
   // An error that depended on the name would tell the client which
   // properties exist on the server's `Object.prototype`.
-  it('treats a name on Object.prototype like an unused name, then removes it', () => {
+  it('treats a name on Object.prototype like an unused name, then removes its entries', () => {
     const pathWithNameArb = fc
       .array(fc.oneof(pathTokenArb, fc.constant('NAME')), {maxLength: 12})
       .map(tokens => tokens.join(''))
     fc.assert(
       fc.property(entriesArb(pathWithNameArb), entries => {
-        const parseWith = (name: string): unknown =>
-          outcomeWithName(entries, name)
-        expect(parseWith('toString')).toStrictEqual(
-          replaceKey(parseWith('zz'), 'zz', 'toString'),
+        expect(outcomeWithName(entries, 'toString')).toStrictEqual(
+          outcomeWithoutName(entries),
         )
       }),
     )

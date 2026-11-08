@@ -228,15 +228,17 @@ parseFormData(formData)
 
 The name of any other property on `Object.prototype` at parse time (`toString`,
 `hasOwnProperty`, ..., including any added by a newer runtime or by other code)
-would shadow a built-in method on the parsed object, so the key and its value
-are removed from the result. The key is parsed like any other key first, so it
-causes the same errors as an unused name. An error therefore doesn't tell the
-client which properties exist on the server's `Object.prototype`:
+would shadow a built-in method on the parsed object, so every entry with such a
+name in its path is removed, like [`qs`](https://github.com/ljharb/qs) does. The
+entry is parsed like any other entry first, so it causes the same errors as an
+unused name. An error therefore doesn't tell the client which properties exist
+on the server's `Object.prototype`:
 
 ```ts
 const formData = new FormData()
 formData.append('user.name', 'Ada')
 formData.append('user.toString', 'x')
+formData.append('settings.valueOf', 'x')
 parseFormData(formData)
 // {user: {name: 'Ada'}}
 ```
