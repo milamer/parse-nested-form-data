@@ -594,12 +594,8 @@ export function parseFormData(
   // Undo the removed entries, children before their parents. A kept entry
   // always ends in a value, so a container that is empty now was only used by
   // removed entries.
-  for (
-    let created = createdByRemoved.pop();
-    created;
-    created = createdByRemoved.pop()
-  ) {
-    const [parent, key, value] = created
+  for (let idx = createdByRemoved.length - 1; idx >= 0; idx--) {
+    const [parent, key, value] = createdByRemoved[idx]!
     if (
       (isJsonObject(value) || Array.isArray(value)) &&
       Object.keys(value).length > 0
