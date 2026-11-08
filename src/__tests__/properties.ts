@@ -223,8 +223,11 @@ describe('properties', () => {
   // properties exist on the server's `Object.prototype`.
   it('treats a name on Object.prototype like an unused name, then removes its entries', () => {
     const pathWithNameArb = fc
-      .array(fc.oneof(pathTokenArb, fc.constant('NAME')), {maxLength: 12})
-      .map(tokens => tokens.join(''))
+      .tuple(
+        prefixArb,
+        fc.array(fc.oneof(pathTokenArb, fc.constant('NAME')), {maxLength: 12}),
+      )
+      .map(([prefix, tokens]) => prefix + tokens.join(''))
     fc.assert(
       fc.property(entriesArb(pathWithNameArb), entries => {
         expect(outcomeWithName(entries, 'toString')).toStrictEqual(
