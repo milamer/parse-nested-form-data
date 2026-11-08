@@ -6,7 +6,6 @@ import {
   ForbiddenKeyError,
   MixedArrayError,
   parseFormData,
-  type ParseFormDataOptions,
 } from '../'
 import {outcomeWithName} from './utils'
 
@@ -100,6 +99,30 @@ const anyPathArb = fc
   // Large array indices take seconds to parse (see the expected failure at
   // the bottom of this file). Keep indices small so the suite stays fast.
   .filter(path => !/\d{4}/.test(path))
+// Paths built from whole path parts, so they often have more parts than the
+// depth limit. `toString` is removed from the result, `__proto__` throws and a
+// root array part (`[0]a`) can't be built.
+const partsPathArb = fc
+  .tuple(
+    prefixArb,
+    fc.array(
+      fc.constantFrom(
+        'a',
+        '.b',
+        '[c]',
+        '[0]',
+        '[1]',
+        '[]',
+        '.toString',
+        '[__proto__]',
+        '.',
+        '[',
+        ']',
+      ),
+      {maxLength: 8},
+    ),
+  )
+  .map(([prefix, parts]) => prefix + parts.join(''))
 const entriesArb = (
   pathArb: fc.Arbitrary<string>,
 ): fc.Arbitrary<Array<Entry>> =>
@@ -169,63 +192,85 @@ function outcomeWithoutName(entries: Array<Entry>): unknown {
   }
 }
 
-// Whether `entries` parse to nothing deeper than `depth`, or throw
-// `DepthLimitError` for a path that is deeper. Without a path over the limit,
-// the limit changes nothing: the result or error is the same as without it.
-function respectsDepth(entries: Array<Entry>, depth: number): boolean {
-  let lastPath = ''
-  const transformEntry: ParseFormDataOptions['transformEntry'] = (
-    entry,
-    defaultTransform,
-  ) => {
-    const transformed = defaultTransform(entry)
-    lastPath = transformed.path
-    return transformed
-  }
+// The outcome of a parse: the result, or the class and message of the error.
+type Outcome = {result: unknown} | {error: unknown; message: string}
+function outcomeOf(parse: () => unknown): Outcome {
   try {
-    const result = parseFormData(entries, {depth, transformEntry})
-    return (
-      nestingOf(result) <= depth &&
-      JSON.stringify(result) === JSON.stringify(parseFormData(entries))
-    )
+    return {result: parse()}
   } catch (error) {
-    // The depth is checked right after the transform, so the last path is
-    // the one that threw.
-    if (error instanceof DepthLimitError) {
-      return isOverDepth(lastPath, error.key, depth)
+    const type = error instanceof Error ? error.constructor : error
+    return {error: type, message: String(error)}
+  }
+}
+
+// The outcome of `entries` with `depth`, worked out without the limit. Entries
+// are built in order, so it's the unlimited outcome up to the first entry with
+// more path parts than `depth`, which throws `DepthLimitError` with the path up
+// to its part `depth + 1`.
+function expectedWithDepth(entries: Array<Entry>, depth: number): Outcome {
+  const paths = entries.map(entry => transformedPath(entry))
+  const tooDeep = paths.findIndex(path => partsOf(path).length > depth)
+  if (tooDeep === -1) return outcomeOf(() => parseFormData(entries))
+  const before = outcomeOf(() => parseFormData(entries.slice(0, tooDeep)))
+  if ('error' in before) return before
+  const path = paths[tooDeep]!
+  return outcomeOf(() => {
+    throw new DepthLimitError(keyAt(path, depth))
+  })
+}
+
+// The path of `entry` after the default transform (`+a` => `a`).
+function transformedPath(entry: Entry): string {
+  let path = ''
+  parseFormData([entry], {
+    transformEntry: (item, defaultTransform) => {
+      path = defaultTransform(item).path
+      return {path: 'a', value: ''}
+    },
+  })
+  return path
+}
+
+// Names on Object.prototype are removed from the result, and `__proto__`,
+// `constructor` and `prototype` throw. `partsOf` renames them to `ǂ`, which is
+// never generated, so they are built like any other key.
+const UNBUILT_NAME = new RegExp(
+  [...Object.getOwnPropertyNames(Object.prototype), 'prototype'].join('|'),
+)
+
+// The keys of the path parts of `path` (`a.b[0]` => `.a`, `.b`, `[]0`; array
+// indices are squashed). Under the root key `r`, a path that starts with an
+// array index is built too.
+function partsOf(path: string): Array<string> {
+  const built = parseFormData(
+    [[`r.${path.split(UNBUILT_NAME).join('ǂ')}`, 'x']],
+    {
+      transformEntry: ([entryPath, value]) => ({path: entryPath, value}),
+    },
+  )
+  const parts: Array<string> = []
+  let container: unknown = built
+  while (isContainer(container)) {
+    const [key, item] = Object.entries(container)[0]!
+    parts.push(`${Array.isArray(container) ? '[]' : '.'}${key}`)
+    container = item
+  }
+  return parts.slice(1)
+}
+
+function isContainer(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+// The shortest start of `path` with its first `depth + 1` path parts.
+function keyAt(path: string, depth: number): string {
+  const expected = JSON.stringify(partsOf(path).slice(0, depth + 1))
+  for (let end = 0; end < path.length; end++) {
+    if (JSON.stringify(partsOf(path.slice(0, end))) === expected) {
+      return path.slice(0, end)
     }
-    const unlimited = thrownBy(() => parseFormData(entries))
-    return (
-      unlimited instanceof Error &&
-      Object.getPrototypeOf(unlimited) === Object.getPrototypeOf(error) &&
-      String(unlimited) === String(error)
-    )
   }
-}
-
-// Whether `path` starts with `key` and nests deeper than `depth` when parsed
-// alone without a limit. A path that can't be built (a forbidden key, or an
-// array part on the root like `[]a`) or is removed (a name on
-// `Object.prototype`) has no nesting to check.
-function isOverDepth(path: string, key: string, depth: number): boolean {
-  if (!path.startsWith(key)) return false
-  try {
-    const nesting = nestingOf(
-      parseFormData([[path, 'x']], {
-        transformEntry: ([entryPath, value]) => ({path: entryPath, value}),
-      }),
-    )
-    return nesting === 0 || nesting > depth
-  } catch (error) {
-    return isNoneOrLibraryError(error)
-  }
-}
-
-// How many objects and arrays deep the deepest value is (`{a: {b: 'x'}}` has
-// 2). Every value is as deep as its path has parts.
-function nestingOf(value: unknown): number {
-  if (typeof value !== 'object' || value === null) return 0
-  return Math.max(0, ...Object.values(value).map(item => 1 + nestingOf(item)))
+  return path
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {
@@ -335,9 +380,13 @@ describe('properties', () => {
   it('limits the nesting to depth or throws DepthLimitError', () => {
     fc.assert(
       fc.property(
-        entriesArb(anyPathArb),
+        entriesArb(fc.oneof(anyPathArb, partsPathArb)),
         fc.integer({min: 1, max: 6}),
-        (entries, depth) => respectsDepth(entries, depth),
+        (entries, depth) => {
+          expect(
+            outcomeOf(() => parseFormData(entries, {depth})),
+          ).toStrictEqual(expectedWithDepth(entries, depth))
+        },
       ),
     )
   })
