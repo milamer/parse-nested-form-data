@@ -6,7 +6,7 @@
  */
 
 /**
- * Thrown when a path is used multiple times or has missmatching path parts.
+ * Thrown when a path is used multiple times or has mismatching path parts.
  *
  * @example
  * ```ts
@@ -24,6 +24,7 @@
  * formData.append('a', 'c')
  * parseFormData(formData)
  * // throws DuplicateKeyError('a')
+ * ```
  *
  * @example
  * ```ts
@@ -223,13 +224,11 @@ type DefaultTransform = typeof defaultTransform
  * formData.append('a', 'a')
  * formData.append('b', 'b')
  * parseFormData(formData, {
- *   transformEntry: ([path, value], defaultTransform) => {
+ *   transformEntry: (entry, defaultTransform) => {
+ *     const {path, value} = defaultTransform(entry)
  *     return {
  *       path,
- *       value:
- *         typeof value === 'string'
- *           ? value.toUpperCase()
- *           : defaultTransform(value),
+ *       value: typeof value === 'string' ? value.toUpperCase() : value,
  *     }
  *   },
  * })
@@ -255,7 +254,7 @@ export type ParseFormDataOptions = {
  * ```ts
  * const path = 'a[0].b'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
  * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[0]'},
  * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a[0].b'}]
  * ```
@@ -277,7 +276,7 @@ type PathPart = {
  * ```ts
  * const path = 'a[0].b'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
  * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[0]'},
  * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a[0].b'}]
  * ```
@@ -286,7 +285,7 @@ type PathPart = {
  * ```ts
  * const path = 'a.b'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: {}, pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: {}, pathToPart: 'a'},
  * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a.b'}]
  * ```
  *
@@ -303,7 +302,7 @@ type PathPart = {
  * ```ts
  * const path = 'a[][0]'
  * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object, default: [], pathToPart: 'a'},
+ * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
  * //     {path: '', type: 'array', default: [], pathToPart: 'a[]'},
  * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[][0]'}]
  * ```
@@ -492,8 +491,6 @@ function handlePathPart(
  *   in brackets is the key as it is (`a[b.c]` => key `b.c`)
  * - `[\d*]` after path part => push to array in order `\d` or push to end if `[]`
  *
-
- *
  * @example
  * ```ts
  * const formData = new FormData()
@@ -501,7 +498,7 @@ function handlePathPart(
  * formData.append('&b', 'true')
  * formData.append('-c', 'null')
  * formData.append('d', 'foo')
- * parseFormData(formData, defaultTransform)
+ * parseFormData(formData)
  * // => {a: 1, b: true, c: null, d: 'foo'}
  * ```
  *
@@ -530,7 +527,7 @@ function handlePathPart(
  * parseFormData(formData)
  * // => {a: ['foo', 'bar']}
  * ```
- * 
+ *
  * @example
  * ```ts
  * const formData = new FormData()
@@ -539,15 +536,20 @@ function handlePathPart(
  * parseFormData(formData)
  * // => {a: ['foo', 'bar']}
  * ```
- * 
+ *
  * @example
  * ```ts
  * const formData = new FormData()
  * formData.append('a[0]', 'foo')
- * parseFormData(formData, {transformEntry: (path, value) => {path, value: value + 'bar'}})
+ * parseFormData(formData, {
+ *   transformEntry: ([path, value]) => ({
+ *     path,
+ *     value: typeof value === 'string' ? value + 'bar' : value,
+ *   }),
+ * })
  * // => {a: ['foobar']}
  * ```
- * 
+ *
  * @example
  * ```ts
  * const formData = new FormData()
@@ -558,8 +560,9 @@ function handlePathPart(
  * ```
  *
  * @param {Iterable<[string, string | File]>} formData - an iterator of an [`path`, `value`] tuple
- * - `path` := an optional prefix (`+`, `-`, `&`), then keys joined by `.`,
- *   followed by any number of `[]`, `[\d+]` or `[key]` (e.g. `+a[][1].b[c]`)
+ * - `path` := an optional prefix (`+`, `-`, `&`), then path parts: keys after
+ *   `.` or in brackets (`[key]`), and array parts `[]` or `[\d+]` (e.g.
+ *   `+a[][1].b[c]`)
  * - `value` := `string` or `File` (native or polyfilled `File` values are kept
  *   as they are)
  * @param {ParseFormDataOptions} options - options for parsing the form data
@@ -568,9 +571,14 @@ function handlePathPart(
  * - `removeEmptyString` - if `true` removes all entries where the value is an empty string
  * @returns {JsonObject} the parsed JSON object
  * @throws `DuplicateKeyError` if
- * - a path part is an object and the path part is already defined as an object
- * - a path part is an array and the path part is already defined as an array
- * @throws `MixedArrayError` if at a specific path part an unordered array is 
+ * - two entries set a value at the same path
+ *   - e.g. `a` and `a`, `a[0]` and `a[0]`, `a.b` and `a[b]`
+ * - an entry uses a path part as an object, array or value and another entry
+ *   uses it differently
+ *   - e.g. `a` and `a.b`, `a.b` and `a[]`, `a[]` and `a.b`
+ * - the path starts with an array part
+ *   - e.g. `[0]` or `[]`
+ * @throws `MixedArrayError` if at a specific path part an unordered array is
  * defined and at a later path part an ordered array is defined or vice versa
  * - e.g. `a[0]` and `a[]`
  * - e.g. `a[]` and `a[0]`

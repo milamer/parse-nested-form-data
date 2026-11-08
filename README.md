@@ -44,7 +44,7 @@ object out of the values. You can tell the parser to do not parse empty values.
 - [Advanced usage](#advanced-usage)
   - [Options](#options)
   - [removeEmptyString: `[boolean]`](#removeemptystring-boolean)
-  - [transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => [string, string | JsonLeafValue]`](#transformentry-entry-path-string-value-string--file-defaulttransform-defaulttransform--string-string--jsonleafvalue)
+  - [transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`](#transformentry-entry-path-string-value-string--file-defaulttransform-defaulttransform--path-string-value-jsonleafvalue)
 - [Issues](#issues)
   - [🐛 Bugs](#-bugs)
   - [💡 Feature Requests](#-feature-requests)
@@ -315,7 +315,7 @@ formData.append('+a', '1')
 formData.append('&b', 'true')
 formData.append('-c', 'null')
 formData.append('d', 'foo')
-parseFormData(formData, defaultTransform)
+parseFormData(formData)
 // => {a: 1, b: true, c: null, d: 'foo'}
 ```
 
@@ -332,15 +332,7 @@ formData.append('b[0]', '4')
 formData.append('+b[100]', '5')
 parseFormData(formData)
 // {
-//   a: [
-//     {
-//       b: {
-//         c: '1',
-//         d: '2',
-//       },
-//     },
-//     '3',
-//   ],
+//   a: [{b: {c: '1'}}, {b: {d: '2'}}, '3'],
 //   b: ['4', 5],
 // }
 ```
@@ -366,20 +358,18 @@ parseFormData(formData, {removeEmptyString: true})
 // {foo: [{foo: 'test3', baz: '4'}, {bar: 'test2'}]}
 ```
 
-### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => [string, string | JsonLeafValue]`
+### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`
 
 ```ts
 const formData = new FormData()
 formData.append('a', 'a')
 formData.append('b', 'b')
 parseFormData(formData, {
-  transformEntry: ([path, value], defaultTransform) => {
+  transformEntry: (entry, defaultTransform) => {
+    const {path, value} = defaultTransform(entry)
     return {
       path,
-      value:
-        typeof value === 'string'
-          ? value.toUpperCase()
-          : defaultTransform(value),
+      value: typeof value === 'string' ? value.toUpperCase() : value,
     }
   },
 })
