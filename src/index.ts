@@ -397,9 +397,10 @@ function handlePathPart(
           currentObject[key] = val
           return
         }
-        // Defined instead of assigned, so a setter or read-only property on
-        // `Object.prototype` isn't used. The entry is removed at the end (see
-        // `parseFormData`).
+        // We use `Object.defineProperty` so that read-only properties and
+        // setters on the prototype are not used, but shadowed by a property
+        // on our object (the prototype stays untouched). The entry is removed
+        // at the end (see `parseFormData`).
         Object.defineProperty(currentObject, key, {
           value: val,
           writable: true,
