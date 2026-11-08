@@ -373,6 +373,7 @@ function handlePathPart(
 ): [
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
+  key: string | number,
 ] {
   if (pathPart.type === 'object') {
     const key = pathPart.path
@@ -396,8 +397,8 @@ function handlePathPart(
           return
         }
         // Defined instead of assigned, so a setter or read-only property on
-        // `Object.prototype` isn't used. This result is only used to find
-        // errors (see `parseFormData`).
+        // `Object.prototype` isn't used. The entry is removed at the end (see
+        // `parseFormData`).
         Object.defineProperty(currentObject, key, {
           value: val,
           writable: true,
@@ -405,6 +406,7 @@ function handlePathPart(
           configurable: true,
         })
       },
+      key,
     ]
   }
   if (!Array.isArray(currentPathObject)) {
@@ -425,7 +427,7 @@ function handlePathPart(
   }
 
   const order = isOrdered ? Number(pathPart.path) : currentArray.length
-  return [currentArray[order], val => (currentArray[order] = val)]
+  return [currentArray[order], val => (currentArray[order] = val), order]
 }
 
 /**
@@ -533,50 +535,42 @@ export function parseFormData(
     transformEntry = defaultTransform,
   }: ParseFormDataOptions = {},
 ): JsonObject {
-  const entries: Array<{path: string; value: JsonLeafValue}> = []
-  for (const entry of Array.from(formData)) {
-    if (removeEmptyString && entry[1] === '') continue
-    entries.push(transformEntry(entry, defaultTransform))
-  }
-
-  // Built from all entries so `Object.prototype` names cause the same errors as
-  // unused names, then rebuilt without their entries if there are any.
-  const result = buildResult(entries)
-  const keptEntries = entries.filter(
-    ({path}) =>
-      !extractPathParts(path).some(
-        pathPart => pathPart.type === 'object' && isPrototypeKey(pathPart.path),
-      ),
-  )
-  return keptEntries.length === entries.length
-    ? result
-    : buildResult(keptEntries)
-}
-
-function buildResult(
-  entries: Array<{path: string; value: JsonLeafValue}>,
-): JsonObject {
   const result: JsonObject = {}
 
   // all arrays we need to squash (in place) later
   const arraysWithOrder: Set<Array<JsonValue>> = new Set()
 
-  for (const {path, value} of entries) {
+  // What the removed entries created, as [parent, key, value], in order.
+  const createdByRemoved: Array<
+    [JsonObject | JsonArray, string | number, JsonValue]
+  > = []
+
+  for (const entry of Array.from(formData)) {
+    if (removeEmptyString && entry[1] === '') continue
+
+    const {path, value} = transformEntry(entry, defaultTransform)
     const pathParts = extractPathParts(path)
+    // Removed entries are still built like any other entry, so they cause the
+    // same errors as an unused name, and undone below.
+    const isRemoved = pathParts.some(
+      pathPart => pathPart.type === 'object' && isPrototypeKey(pathPart.path),
+    )
 
     let currentPathObject: JsonObject | JsonArray = result
     pathParts.forEach((pathPart, idx) => {
-      const [nextPathValue, setNextPathValue] = handlePathPart(
+      const [nextPathValue, setNextPathValue, key] = handlePathPart(
         pathPart,
         currentPathObject,
         arraysWithOrder,
       )
+      const parent = currentPathObject
 
       if (pathParts.length - 1 === idx) {
         if (nextPathValue !== undefined) {
           throw new DuplicateKeyError(pathPart.pathToPart)
         }
         setNextPathValue(value)
+        if (isRemoved) createdByRemoved.push([parent, key, value])
       } else {
         if (
           nextPathValue !== undefined &&
@@ -589,8 +583,31 @@ function buildResult(
         const nextPathObject = nextPathValue ?? pathPart.default
         currentPathObject = nextPathObject
         setNextPathValue(nextPathObject)
+        if (isRemoved && nextPathValue === undefined) {
+          createdByRemoved.push([parent, key, nextPathObject])
+        }
       }
     })
+  }
+
+  // Undo the removed entries, children before their parents. A kept entry
+  // always ends in a value, so a container that is empty now was only used by
+  // removed entries.
+  for (
+    let created = createdByRemoved.pop();
+    created;
+    created = createdByRemoved.pop()
+  ) {
+    const [parent, key, value] = created
+    if (
+      (isJsonObject(value) || Array.isArray(value)) &&
+      Object.keys(value).length > 0
+    ) {
+      continue
+    }
+    Reflect.deleteProperty(parent, key)
+    // The hole is squashed below like the gaps in ordered arrays.
+    if (Array.isArray(parent)) arraysWithOrder.add(parent)
   }
 
   for (const orderedArray of Array.from(arraysWithOrder)) {

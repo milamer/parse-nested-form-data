@@ -545,6 +545,30 @@ describe('Object.prototype names', () => {
       ],
       {a: ['1', '3']},
     ],
+    [[['x.y[0].toString', '1']], {}],
+    [[['a[].toString', '1']], {}],
+    [
+      [
+        ['x.toString', '1'],
+        ['x.b', '2'],
+      ],
+      {x: {b: '2'}},
+    ],
+    [
+      [
+        ['x.b', '2'],
+        ['x.toString', '1'],
+      ],
+      {x: {b: '2'}},
+    ],
+    [
+      [
+        ['a[2].toString', '1'],
+        ['a[2].b', '2'],
+        ['a[5].valueOf', '3'],
+      ],
+      {a: [{b: '2'}]},
+    ],
   ])('keeps the other entries of %j', (entries, expected) => {
     expect(parseFormData(entries)).toStrictEqual(expected)
   })

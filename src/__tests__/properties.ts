@@ -110,29 +110,38 @@ function renameKeys(value: unknown, from: string, to: string): unknown {
   )
 }
 
-// Whether parsing `path` alone sets the key `name` at any depth.
-function setsKey(path: string, name: string): boolean {
-  const hasKey = (value: unknown): boolean =>
-    typeof value === 'object' &&
-    value !== null &&
-    Object.entries(value).some(([key, item]) => key === name || hasKey(item))
-  try {
-    return hasKey(parseFormData([[path, '']]))
-  } catch {
-    return false
+// Whether `value` isn't an empty object or array.
+function isNotEmpty(value: unknown): boolean {
+  return (
+    typeof value !== 'object' || value === null || Object.keys(value).length > 0
+  )
+}
+
+// Removes every `name` key from `value`, then the objects and arrays that are
+// left empty. Every entry ends in a value, so only entries through a `name`
+// key leave them empty.
+function withoutKey(value: unknown, name: string): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => withoutKey(item, name))
+      .filter(item => isNotEmpty(item))
   }
+  if (typeof value !== 'object' || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== name)
+      .map(([key, item]) => [key, withoutKey(item, name)])
+      .filter(([, item]) => isNotEmpty(item)),
+  )
 }
 
 // The outcome of `entries` with `toString` for `NAME` if it were an unused
-// name, except that entries setting it as a key are removed: the error for an
-// unused name, or else the result without those entries.
+// name: the same error, or else the same result without the `toString` keys
+// and the objects and arrays only they filled.
 function outcomeWithoutName(entries: Array<Entry>): unknown {
   const outcome = outcomeWithName(entries, 'zz')
   if (typeof outcome === 'string') return outcome
-  const kept = entries.filter(
-    ([path]) => !setsKey(path.split('NAME').join('zz'), 'zz'),
-  )
-  return renameKeys(outcomeWithName(kept, 'zz'), 'zz', 'toString')
+  return renameKeys(withoutKey(outcome, 'zz'), 'zz', 'toString')
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {
