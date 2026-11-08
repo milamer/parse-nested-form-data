@@ -1,6 +1,7 @@
 import {afterEach, describe, expect, it} from 'vitest'
 import {Blob as RemixBlob, File} from '@remix-run/web-file'
 import {
+  DepthLimitError,
   DuplicateKeyError,
   ForbiddenKeyError,
   MixedArrayError,
@@ -246,6 +247,63 @@ describe('handle options', () => {
       foo: [{foo: 'test3', baz: '4'}, {bar: 'test2'}],
     })
   })
+})
+
+describe('depth option', () => {
+  it('has no limit by default', () => {
+    const path = 'a' + '.a'.repeat(9_999)
+    expect(() => parseFormData([[path, 'x']])).not.toThrow()
+  })
+
+  it.each([
+    ['a', 1, {a: 'x'}],
+    ['a.b', 2, {a: {b: 'x'}}],
+    ['a[b]', 2, {a: {b: 'x'}}],
+    ['a[0]', 2, {a: ['x']}],
+    ['a[]', 2, {a: ['x']}],
+    ['a.b[0][c]', 4, {a: {b: [{c: 'x'}]}}],
+    ['a..b', 2, {a: {b: 'x'}}],
+    ['+a.b', 2, {a: {b: Number('x')}}],
+    ['a.b', Infinity, {a: {b: 'x'}}],
+  ])('parses %s with depth %d', (path, depth, expected) => {
+    expect(parseFormData([[path, 'x']], {depth})).toStrictEqual(expected)
+  })
+
+  it.each([
+    ['a.b', 1, 'a.b'],
+    ['a[b]', 1, 'a[b]'],
+    ['a[]', 1, 'a[]'],
+    ['a[0]', 1, 'a[0]'],
+    ['a.b.c', 2, 'a.b.c'],
+    ['a.b[0].c', 2, 'a.b[0]'],
+    ['a[b][c][d]', 3, 'a[b][c][d]'],
+  ])('throws DepthLimitError for %s with depth %d', (path, depth, key) => {
+    expect(() => parseFormData([[path, 'x']], {depth})).toThrow(
+      new DepthLimitError(key),
+    )
+  })
+
+  it('throws for an entry that would be removed, like for any other name', () => {
+    expect(() => parseFormData([['a.toString.b', 'x']], {depth: 2})).toThrow(
+      new DepthLimitError('a.toString.b'),
+    )
+  })
+
+  it('names the path part over the limit in the error', () => {
+    const error = new DepthLimitError('a.b')
+    expect(error).toBeInstanceOf(Error)
+    expect(error.key).toBe('a.b')
+    expect(error.message).toBe('Depth limit exceeded at path part a.b')
+  })
+
+  it.each([0, -1, 1.5, Number.NaN, -Infinity])(
+    'throws a TypeError for depth %d, even without entries',
+    depth => {
+      expect(() => parseFormData([], {depth})).toThrow(
+        new TypeError('depth must be a positive integer or Infinity'),
+      )
+    },
+  )
 })
 
 describe('errors', () => {

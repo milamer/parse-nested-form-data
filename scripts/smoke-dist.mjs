@@ -18,6 +18,7 @@ const entries = [
 ]
 const expected = {a: [{b: 'x', c: 'y'}], n: 1}
 const expectedExports = [
+  'DepthLimitError',
   'DuplicateKeyError',
   'ForbiddenKeyError',
   'MixedArrayError',

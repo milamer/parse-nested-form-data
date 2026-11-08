@@ -93,6 +93,25 @@ export class ForbiddenKeyError extends Error {
     this.key = key
   }
 }
+/**
+ * Thrown when a path has more path parts than the `depth` option allows.
+ * `key` is the path up to the first path part over the limit.
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('a.b[0].c', 'x')
+ * parseFormData(formData, {depth: 2})
+ * // throws DepthLimitError('a.b[0]')
+ * ```
+ */
+export class DepthLimitError extends Error {
+  key: string
+  constructor(key: string) {
+    super(`Depth limit exceeded at path part ${key}`)
+    this.key = key
+  }
+}
 
 // Rejected even when a runtime doesn't define them on `Object.prototype`
 // (e.g. `node --disable-proto=delete`).
@@ -208,6 +227,19 @@ type DefaultTransform = typeof defaultTransform
  * @param transformEntry - a function to transform the FormData entry into a path and a value
  * (default: `defaultTransform`)
  * @param removeEmptyString - skip empty values '' (default: `false`)
+ * @param depth - the maximum number of path parts in a path, counting every
+ * part (`a.b[0]` has 3); a positive integer or `Infinity` (default: `Infinity`)
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('a.b', 'x')
+ * parseFormData(formData, {depth: 2})
+ * // => {a: {b: 'x'}}
+ * formData.append('a.c.d', 'y')
+ * parseFormData(formData, {depth: 2})
+ * // throws DepthLimitError('a.c.d')
+ * ```
  *
  * @example
  * ```ts
@@ -237,6 +269,7 @@ type DefaultTransform = typeof defaultTransform
  */
 export type ParseFormDataOptions = {
   removeEmptyString?: boolean
+  depth?: number
   transformEntry?: (
     entry: [path: string, value: string | File],
     defaultTransform: DefaultTransform,
@@ -547,7 +580,12 @@ function handlePathPart(
  * - `transformEntry` - a function to transform the path and the value before
  *    inserting the value at the path in the resulting object (default: `defaultTransform`)
  * - `removeEmptyString` - if `true` removes all entries where the value is an empty string
+ * - `depth` - the maximum number of path parts in a path, counting every part
+ *   (default: `Infinity`)
  * @returns {JsonObject} the parsed JSON object
+ * @throws `TypeError` if `depth` isn't a positive integer or `Infinity`
+ * @throws `DepthLimitError` if a path has more path parts than `depth`
+ * - e.g. `a.b[0]` with `depth: 2` => `DepthLimitError('a.b[0]')`
  * @throws `DuplicateKeyError` if
  * - two entries set a value at the same path
  *   - e.g. `a` and `a`, `a[0]` and `a[0]`, `a.b` and `a[b]`
@@ -577,8 +615,12 @@ export function parseFormData(
   {
     removeEmptyString = false,
     transformEntry = defaultTransform,
+    depth = Infinity,
   }: ParseFormDataOptions = {},
 ): JsonObject {
+  if (depth !== Infinity && !(Number.isInteger(depth) && depth > 0)) {
+    throw new TypeError('depth must be a positive integer or Infinity')
+  }
   const result: JsonObject = {}
 
   // all arrays we need to squash (in place) later
@@ -600,6 +642,9 @@ export function parseFormData(
 
     const {path, value} = transformEntry(entry, defaultTransform)
     const pathParts = extractPathParts(path)
+    if (pathParts.length > depth) {
+      throw new DepthLimitError(pathParts[depth]!.pathToPart)
+    }
     // Removed entries are still built like any other entry, so they cause the
     // same errors as an unused name, and undone below.
     const isRemoved = pathParts.some(

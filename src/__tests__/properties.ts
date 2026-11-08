@@ -1,6 +1,7 @@
 import * as fc from 'fast-check'
 import {describe, expect, it} from 'vitest'
 import {
+  DepthLimitError,
   DuplicateKeyError,
   ForbiddenKeyError,
   MixedArrayError,
@@ -103,7 +104,12 @@ const entriesArb = (
 ): fc.Arbitrary<Array<Entry>> =>
   fc.array(fc.tuple(pathArb, fc.string()), {maxLength: 6})
 
-const LIBRARY_ERRORS = [DuplicateKeyError, MixedArrayError, ForbiddenKeyError]
+const LIBRARY_ERRORS = [
+  DuplicateKeyError,
+  MixedArrayError,
+  ForbiddenKeyError,
+  DepthLimitError,
+]
 
 function thrownBy(fn: () => unknown): unknown {
   try {
@@ -160,6 +166,33 @@ function outcomeWithoutName(entries: Array<Entry>): unknown {
   return {
     result: renameKeys(withoutKey(outcome.result, 'zz'), 'zz', 'toString'),
   }
+}
+
+// Whether `entries` parse to nothing deeper than `depth`, or throw
+// `DepthLimitError`. Without a path over the limit, the limit changes nothing:
+// the result or error is the same as without it.
+function respectsDepth(entries: Array<Entry>, depth: number): boolean {
+  try {
+    const result = parseFormData(entries, {depth})
+    return (
+      nestingOf(result) <= depth &&
+      JSON.stringify(result) === JSON.stringify(parseFormData(entries))
+    )
+  } catch (error) {
+    if (error instanceof DepthLimitError) return true
+    const unlimited = thrownBy(() => parseFormData(entries))
+    return (
+      Object.getPrototypeOf(unlimited) === Object.getPrototypeOf(error) &&
+      String(unlimited) === String(error)
+    )
+  }
+}
+
+// How many objects and arrays deep the deepest value is (`{a: {b: 'x'}}` has
+// 2). Every value is as deep as its path has parts.
+function nestingOf(value: unknown): number {
+  if (typeof value !== 'object' || value === null) return 0
+  return Math.max(0, ...Object.values(value).map(item => 1 + nestingOf(item)))
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {
@@ -263,6 +296,16 @@ describe('properties', () => {
           outcomeWithoutName(entries),
         )
       }),
+    )
+  })
+
+  it('limits the nesting to depth or throws DepthLimitError', () => {
+    fc.assert(
+      fc.property(
+        entriesArb(anyPathArb),
+        fc.integer({min: 1, max: 6}),
+        (entries, depth) => respectsDepth(entries, depth),
+      ),
     )
   })
 

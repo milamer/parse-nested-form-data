@@ -358,6 +358,31 @@ parseFormData(formData, {removeEmptyString: true})
 // {foo: [{foo: 'test3', baz: '4'}, {bar: 'test2'}]}
 ```
 
+### depth: `[number]`
+
+_Default: `Infinity`_
+
+The maximum number of path parts in a path. Every part counts, so `a.b[0]` and
+`a[b][]` both have 3. A path with more parts throws a `DepthLimitError` with the
+path up to the first part over the limit. Must be a positive integer or
+`Infinity`, otherwise `parseFormData` throws a `TypeError`.
+
+The parser itself handles any depth, but a field like `a.a.a…` with thousands of
+parts creates an object that crashes code walking it recursively
+(`JSON.stringify`, validators, deep clones). Set a limit that fits your forms
+when the input comes from untrusted clients.
+
+```ts
+const formData = new FormData()
+formData.append('user.address.street', 'Main St')
+parseFormData(formData, {depth: 3})
+// {user: {address: {street: 'Main St'}}}
+
+formData.append('user.address.geo.lat', '52.5')
+parseFormData(formData, {depth: 3})
+// throws DepthLimitError('user.address.geo')
+```
+
 ### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`
 
 ```ts
