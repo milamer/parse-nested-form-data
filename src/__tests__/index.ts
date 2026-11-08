@@ -289,6 +289,12 @@ describe('depth option', () => {
     )
   })
 
+  it('throws DepthLimitError before ForbiddenKeyError', () => {
+    expect(() => parseFormData([['__proto__.a.b', 'x']], {depth: 2})).toThrow(
+      new DepthLimitError('__proto__.a.b'),
+    )
+  })
+
   it('names the path part over the limit in the error', () => {
     const error = new DepthLimitError('a.b')
     expect(error).toBeInstanceOf(Error)

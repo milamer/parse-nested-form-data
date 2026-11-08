@@ -380,7 +380,7 @@ parseFormData(formData, {depth: 3})
 
 formData.append('user.address.geo.lat', '52.5')
 parseFormData(formData, {depth: 3})
-// throws DepthLimitError('user.address.geo')
+// throws DepthLimitError('user.address.geo.lat')
 ```
 
 ### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`

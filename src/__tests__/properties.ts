@@ -6,6 +6,7 @@ import {
   ForbiddenKeyError,
   MixedArrayError,
   parseFormData,
+  type ParseFormDataOptions,
 } from '../'
 import {outcomeWithName} from './utils'
 
@@ -169,22 +170,53 @@ function outcomeWithoutName(entries: Array<Entry>): unknown {
 }
 
 // Whether `entries` parse to nothing deeper than `depth`, or throw
-// `DepthLimitError`. Without a path over the limit, the limit changes nothing:
-// the result or error is the same as without it.
+// `DepthLimitError` for a path that is deeper. Without a path over the limit,
+// the limit changes nothing: the result or error is the same as without it.
 function respectsDepth(entries: Array<Entry>, depth: number): boolean {
+  let lastPath = ''
+  const transformEntry: ParseFormDataOptions['transformEntry'] = (
+    entry,
+    defaultTransform,
+  ) => {
+    const transformed = defaultTransform(entry)
+    lastPath = transformed.path
+    return transformed
+  }
   try {
-    const result = parseFormData(entries, {depth})
+    const result = parseFormData(entries, {depth, transformEntry})
     return (
       nestingOf(result) <= depth &&
       JSON.stringify(result) === JSON.stringify(parseFormData(entries))
     )
   } catch (error) {
-    if (error instanceof DepthLimitError) return true
+    // The depth is checked right after the transform, so the last path is
+    // the one that threw.
+    if (error instanceof DepthLimitError) {
+      return isOverDepth(lastPath, error.key, depth)
+    }
     const unlimited = thrownBy(() => parseFormData(entries))
     return (
+      unlimited instanceof Error &&
       Object.getPrototypeOf(unlimited) === Object.getPrototypeOf(error) &&
       String(unlimited) === String(error)
     )
+  }
+}
+
+// Whether `path` starts with `key` and nests deeper than `depth` when parsed
+// alone without a limit. A path that can't be built (a forbidden key) or is
+// removed (a name on `Object.prototype`) has no nesting to check.
+function isOverDepth(path: string, key: string, depth: number): boolean {
+  if (!path.startsWith(key)) return false
+  try {
+    const nesting = nestingOf(
+      parseFormData([[path, 'x']], {
+        transformEntry: ([entryPath, value]) => ({path: entryPath, value}),
+      }),
+    )
+    return nesting === 0 || nesting > depth
+  } catch (error) {
+    return error instanceof ForbiddenKeyError
   }
 }
 

@@ -299,10 +299,32 @@ type PathPart = {
   pathToPart: string
 }
 /**
+ * Returns where the bracket part of the `[` at `open` ends, or -1 if it's part
+ * of the key. Brackets nest like in qs (`a[b[c]]`: the last `]` closes the
+ * first `[`). A `[` that no `]` closes ends at the last `]` (`a[[0]` => key
+ * `[0`). Without a `]` after it, it's part of the key (`a[0` => key `a[0`),
+ * like a `]` that closes no `[` (`a]b` => key `a]b`, `a[b]]` => key `]` in
+ * `b`).
+ *
+ * The scan stops at the returned `]`, where the caller continues, so the
+ * scans of a path don't overlap.
+ */
+function closeOf(path: string, open: number, lastClose: number): number {
+  if (open > lastClose) return -1
+  let depth = 0
+  for (let idx = open; idx < lastClose; idx++) {
+    if (path[idx] === '[') depth++
+    else if (path[idx] === ']' && --depth === 0) return idx
+  }
+  return lastClose
+}
+/**
  *
  * Transforms a FormData path into an array of `PathPart`s.
  *
  * @param path - the path to extract the path parts from
+ * @param maxParts - stop after this many path parts (default: `Infinity`).
+ * The `default` of the last returned part is only right if the path ends there.
  * @returns {Array<PathPart>} the extracted path parts
  *
  * @example
@@ -342,15 +364,7 @@ type PathPart = {
  *
  *
  */
-function extractPathParts(path: string): Array<PathPart> {
-  // Where the bracket part of each `[` ends. Brackets nest like in qs
-  // (`a[b[c]]`: the last `]` closes the first `[`).
-  const closeOf = new Map<number, number>()
-  const open: Array<number> = []
-  for (let idx = 0; idx < path.length; idx++) {
-    if (path[idx] === '[') open.push(idx)
-    else if (path[idx] === ']' && open.length > 0) closeOf.set(open.pop()!, idx)
-  }
+function extractPathParts(path: string, maxParts = Infinity): Array<PathPart> {
   const lastClose = path.lastIndexOf(']')
 
   const parts: Array<PathPart> = []
@@ -361,11 +375,8 @@ function extractPathParts(path: string): Array<PathPart> {
   }
 
   let start = 0
-  for (let idx = 0; idx < path.length; idx++) {
-    // A `[` that no `]` closes ends at the last `]` (`a[[0]` => key `[0`).
-    // Without a `]` after it, it's part of the key (`a[0` => key `a[0`), like
-    // a `]` that closes no `[` (`a]b` => key `a]b`, `a[b]]` => key `]` in `b`).
-    const close = path[idx] === '[' ? (closeOf.get(idx) ?? lastClose) : -1
+  for (let idx = 0; idx < path.length && parts.length < maxParts; idx++) {
+    const close = path[idx] === '[' ? closeOf(path, idx, lastClose) : -1
     if (path[idx] !== '.' && close < idx) continue
 
     addPart(path.slice(start, idx), 'object', idx)
@@ -378,7 +389,11 @@ function extractPathParts(path: string): Array<PathPart> {
     }
     start = idx + 1
   }
-  addPart(path.slice(start), 'object', path.length)
+  if (parts.length < maxParts) {
+    addPart(path.slice(start), 'object', path.length)
+  }
+  // The bracket part can add one more after the limit was reached.
+  if (parts.length > maxParts) parts.length = maxParts
 
   // A part holds an array if the next part is an array index.
   parts.forEach((part, idx) => {
@@ -641,7 +656,7 @@ export function parseFormData(
     if (removeEmptyString && entry[1] === '') continue
 
     const {path, value} = transformEntry(entry, defaultTransform)
-    const pathParts = extractPathParts(path)
+    const pathParts = extractPathParts(path, depth + 1)
     if (pathParts.length > depth) {
       throw new DepthLimitError(pathParts[depth]!.pathToPart)
     }
