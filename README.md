@@ -234,14 +234,20 @@ parseFormData(formData)
 // }
 ```
 
-A key in brackets can't contain `.`, `[` or `]`. `parseFormData` throws an
-`InvalidPathError` with the path up to that part:
+The text in brackets is used as the key as it is, so it can contain `.`, `[` and
+`]` (brackets inside must be balanced):
 
 ```ts
 const formData = new FormData()
 formData.append('object[a.b]', '1')
+formData.append('object[c[d]]', '2')
 parseFormData(formData)
-// throws InvalidPathError('object[a.b]')
+// {
+//   object: {
+//     'a.b': '1',
+//     'c[d]': '2',
+//   },
+// }
 ```
 
 `__proto__`, `constructor` and `prototype` can't be used as an object path part,

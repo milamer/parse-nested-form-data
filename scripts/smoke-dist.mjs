@@ -20,7 +20,6 @@ const expected = {a: [{b: 'x', c: 'y'}], n: 1}
 const expectedExports = [
   'DuplicateKeyError',
   'ForbiddenKeyError',
-  'InvalidPathError',
   'MixedArrayError',
   'parseFormData',
 ]

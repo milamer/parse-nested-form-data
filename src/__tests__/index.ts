@@ -3,7 +3,6 @@ import {Blob as RemixBlob, File} from '@remix-run/web-file'
 import {
   DuplicateKeyError,
   ForbiddenKeyError,
-  InvalidPathError,
   MixedArrayError,
   parseFormData,
 } from '../'
@@ -471,28 +470,58 @@ describe('bracket keys', () => {
   })
 
   it.each([
-    ['a[foo.bar]', 'a[foo.bar]'],
-    ['a[foo[0]]', 'a[foo[0]]'],
-    ['a[fo]o]', 'a[fo]o]'],
-    ['a[]]', 'a[]]'],
-    ['a[foo][x.y].z', 'a[foo][x.y]'],
-    ['+a[0][x.y]', 'a[0][x.y]'],
-  ])('%s -> InvalidPathError(%s)', (path, key) => {
-    expect(() => parseFormData([[path, 'x']])).toThrow(
-      new InvalidPathError(key),
-    )
-  })
-
-  it('reports the invalid part in the error', () => {
-    const error = new InvalidPathError('a[foo.bar]')
-    expect(error).toBeInstanceOf(Error)
-    expect(error.key).toBe('a[foo.bar]')
-    expect(error.message).toBe('Invalid path at path part a[foo.bar]')
+    ['a[foo.bar]', {a: {'foo.bar': 'x'}}],
+    ['a[foo[0]]', {a: {'foo[0]': 'x'}}],
+    ['a[b[c][d]]', {a: {'b[c][d]': 'x'}}],
+    ['a[foo][x.y].z', {a: {foo: {'x.y': {z: 'x'}}}}],
+    ['a[0][x.y]', {a: [{'x.y': 'x'}]}],
+    ['a[__proto__[x]]', {a: {'__proto__[x]': 'x'}}],
+  ])('uses the text in brackets as the key: %s', (path, expected) => {
+    expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
   })
 
   // A `.` or `[` right after `[` is skipped, so these are array paths.
-  it.each(['a[[0]', 'a[.[0]', 'a[.]'])('parses %s as an array', path => {
-    expect(parseFormData([[path, 'x']])).toStrictEqual({a: ['x']})
+  it.each(['a[[0]', 'a[.[0]', 'a[.]', 'a[.0]'])(
+    'parses %s as an array',
+    path => {
+      expect(parseFormData([[path, 'x']])).toStrictEqual({a: ['x']})
+    },
+  )
+
+  // Without a matching `]` followed by `.`, `[` or the end of the path, the
+  // brackets aren't a bracket key: `a` becomes an array and the rest an object
+  // key, which conflict.
+  it.each([
+    ['a[0', 'a[0'],
+    ['a[0]b', 'a[0]b'],
+    ['a[fo]o]', 'a[fo]o]'],
+    ['a[b]]', 'a[b]]'],
+  ])('%s -> DuplicateKeyError(%s)', (path, key) => {
+    expect(() => parseFormData([[path, 'x']])).toThrow(
+      new DuplicateKeyError(key),
+    )
+  })
+
+  it('keeps a leading `[key]` as a key with `]`', () => {
+    expect(parseFormData([['[foo]', 'x']])).toStrictEqual({'foo]': 'x'})
+  })
+
+  // Each shape forces a lookahead for a matching `]`. A scan that restarts
+  // for every `[` takes seconds at this length.
+  it.each([
+    ['a[b]', 'x'],
+    ['a[', ''],
+    ['a[0]b', ''],
+    ['a[b[', ']]'],
+  ])('parses a 200 000 character path of `%s` quickly', (unit, tail) => {
+    const path = unit.repeat(200_000 / unit.length) + tail
+    const start = performance.now()
+    try {
+      parseFormData([[path, 'x']])
+    } catch {
+      // Only the time matters here.
+    }
+    expect(performance.now() - start).toBeLessThan(500)
   })
 })
 
