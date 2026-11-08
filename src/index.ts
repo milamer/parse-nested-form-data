@@ -72,12 +72,10 @@ export class MixedArrayError extends Error {
   }
 }
 /**
- * Thrown when an object path part is `__proto__`, `constructor`, `prototype`,
- * or the name of any property on `Object.prototype` at parse time
- * (`toString`, `hasOwnProperty`, ..., including properties added by a newer
- * runtime or by other code). The first three could modify `Object.prototype`.
- * The others would shadow built-in methods on the parsed object, or be read as
- * an existing value. The names are rejected at any position in the path.
+ * Thrown when an object path part is `__proto__`, `constructor` or
+ * `prototype`, which could modify `Object.prototype`. The names are rejected
+ * at any position in the path. Entries with other names on `Object.prototype`
+ * (`toString`, ...) are removed instead (see `parseFormData`).
  *
  * @example
  * ```ts
@@ -85,14 +83,6 @@ export class MixedArrayError extends Error {
  * formData.append('__proto__.polluted', 'yes')
  * parseFormData(formData)
  * // throws ForbiddenKeyError('__proto__')
- * ```
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('user.toString', 'x')
- * parseFormData(formData)
- * // throws ForbiddenKeyError('user.toString')
  * ```
  */
 export class ForbiddenKeyError extends Error {
@@ -107,11 +97,10 @@ export class ForbiddenKeyError extends Error {
 // (e.g. `node --disable-proto=delete`).
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
-function isForbiddenKey(key: string): boolean {
-  return (
-    FORBIDDEN_OBJECT_KEYS.has(key) ||
-    Object.getOwnPropertyDescriptor(Object.prototype, key) !== undefined
-  )
+// Any property on `Object.prototype` at parse time, including ones added by a
+// newer runtime or by other code.
+function isPrototypeKey(key: string): boolean {
+  return Object.getOwnPropertyDescriptor(Object.prototype, key) !== undefined
 }
 
 type JsonObject = {[Key in string]?: JsonValue}
@@ -347,23 +336,24 @@ function extractPathParts(path: string): Array<PathPart> {
 
 /**
  *
- * Returns the value accessed via `pathPart` in the `currentPathObject`
- * and a setter function to set the value in the `currentPathObject` via the
- * provided `pathPart`.
+ * Returns the value accessed via `pathPart` in the `currentPathObject`,
+ * a setter function to set the value in the `currentPathObject` via the
+ * provided `pathPart`, and the key (object key or array index) it uses.
  *
- * @param pathPart - the path part to get the setter and getter for
+ * @param pathPart - the path part to get the value, setter and key for
  * @param currentPathObject - the object at the current path (before the path part)
  * @param arraysWithOrder - a set of arrays that have an order
- * @returns the setter and getter for the path part
+ * @returns the current value, a setter for it, and the key (object key or
+ * array index) in `currentPathObject`
  *
  * @example
  * ```ts
  * const pathPart = {path: 'a', type: 'object', default: {}, pathToPart: 'a'}
  * const currentPathObject = {}
  * const arraysWithOrder = new Set()
- * const [value, setValue] = getSetterAndGetter(pathPart, currentPathObject, arraysWithOrder)
+ * const [value, setValue, key] = handlePathPart(pathPart, currentPathObject, arraysWithOrder)
  * setValue('b')
- * // => currentPathObject = {a: 'b'}
+ * // => currentPathObject = {a: 'b'}, key = 'a'
  * ```
  *
  * @example
@@ -371,9 +361,9 @@ function extractPathParts(path: string): Array<PathPart> {
  * const pathPart = {path: '0', type: 'array', default: [], pathToPart: 'a[0]'}
  * const currentPathObject = {a: []}
  * const arraysWithOrder = new Set()
- * const [value, setValue] = getSetterAndGetter(pathPart, currentPathObject, arraysWithOrder)
+ * const [value, setValue, key] = handlePathPart(pathPart, currentPathObject.a, arraysWithOrder)
  * setValue('b')
- * // => currentPathObject = {a: ['b']}
+ * // => currentPathObject = {a: ['b']}, key = 0
  * ```
  *
  */
@@ -384,18 +374,41 @@ function handlePathPart(
 ): [
   nextPathValue: JsonValue | undefined,
   setNextPathValue: (value: JsonValue) => void,
+  key: string | number,
 ] {
   if (pathPart.type === 'object') {
-    if (isForbiddenKey(pathPart.path)) {
+    const key = pathPart.path
+    if (FORBIDDEN_OBJECT_KEYS.has(key)) {
       throw new ForbiddenKeyError(pathPart.pathToPart)
     }
     if (Array.isArray(currentPathObject)) {
       throw new DuplicateKeyError(pathPart.pathToPart)
     }
     const currentObject = currentPathObject
+    // Only own properties are existing values, so an inherited `toString`
+    // isn't read as one.
+    const value = Object.prototype.hasOwnProperty.call(currentObject, key)
+      ? currentObject[key]
+      : undefined
     return [
-      currentObject[pathPart.path],
-      val => (currentObject[pathPart.path] = val),
+      value,
+      val => {
+        if (!isPrototypeKey(key)) {
+          currentObject[key] = val
+          return
+        }
+        // We use `Object.defineProperty` so that read-only properties and
+        // setters on the prototype are not used, but shadowed by a property
+        // on our object (the prototype stays untouched). The entry is removed
+        // at the end (see `parseFormData`).
+        Object.defineProperty(currentObject, key, {
+          value: val,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        })
+      },
+      key,
     ]
   }
   if (!Array.isArray(currentPathObject)) {
@@ -416,7 +429,7 @@ function handlePathPart(
   }
 
   const order = isOrdered ? Number(pathPart.path) : currentArray.length
-  return [currentArray[order], val => (currentArray[order] = val)]
+  return [currentArray[order], val => (currentArray[order] = val), order]
 }
 
 /**
@@ -507,9 +520,15 @@ function handlePathPart(
  * - e.g. `a[0]` and `a[]`
  * - e.g. `a[]` and `a[0]`
  * @throws `ForbiddenKeyError` if an object path part is `__proto__`,
- * `constructor`, `prototype` or the name of a property on `Object.prototype`
+ * `constructor` or `prototype`
  * - e.g. `__proto__.polluted`
- * - e.g. `user.toString`
+ *
+ * An entry with any other object path part named like a property on
+ * `Object.prototype` (`toString`, `hasOwnProperty`, ...) is removed, like `qs`
+ * does. It's parsed like any other entry first, so it causes the same errors
+ * as an unused name: an error doesn't tell the client which properties exist
+ * on the server's `Object.prototype`.
+ * - e.g. `user.toString` => `{}`
  */
 export function parseFormData(
   formData: Iterable<[string, string | File]>,
@@ -523,25 +542,43 @@ export function parseFormData(
   // all arrays we need to squash (in place) later
   const arraysWithOrder: Set<Array<JsonValue>> = new Set()
 
+  // What the removed entries created, in order. `container` is the object or
+  // array an entry created on its way to its value; it's undefined for the
+  // value itself.
+  const createdByRemoved: Array<
+    [
+      parent: JsonObject | JsonArray,
+      key: string | number,
+      container: JsonObject | JsonArray | undefined,
+    ]
+  > = []
+
   for (const entry of Array.from(formData)) {
     if (removeEmptyString && entry[1] === '') continue
 
     const {path, value} = transformEntry(entry, defaultTransform)
     const pathParts = extractPathParts(path)
+    // Removed entries are still built like any other entry, so they cause the
+    // same errors as an unused name, and undone below.
+    const isRemoved = pathParts.some(
+      pathPart => pathPart.type === 'object' && isPrototypeKey(pathPart.path),
+    )
 
     let currentPathObject: JsonObject | JsonArray = result
     pathParts.forEach((pathPart, idx) => {
-      const [nextPathValue, setNextPathValue] = handlePathPart(
+      const [nextPathValue, setNextPathValue, key] = handlePathPart(
         pathPart,
         currentPathObject,
         arraysWithOrder,
       )
+      const parent = currentPathObject
 
       if (pathParts.length - 1 === idx) {
         if (nextPathValue !== undefined) {
           throw new DuplicateKeyError(pathPart.pathToPart)
         }
         setNextPathValue(value)
+        if (isRemoved) createdByRemoved.push([parent, key, undefined])
       } else {
         if (
           nextPathValue !== undefined &&
@@ -554,8 +591,22 @@ export function parseFormData(
         const nextPathObject = nextPathValue ?? pathPart.default
         currentPathObject = nextPathObject
         setNextPathValue(nextPathObject)
+        if (isRemoved && nextPathValue === undefined) {
+          createdByRemoved.push([parent, key, nextPathObject])
+        }
       }
     })
+  }
+
+  // Delete what the removed entries added. Go backwards so children are
+  // deleted before their parents. A container that still has keys is also
+  // used by a kept entry, so it stays.
+  for (let idx = createdByRemoved.length - 1; idx >= 0; idx--) {
+    const [parent, key, container] = createdByRemoved[idx]!
+    if (container && Object.keys(container).length > 0) continue
+    Reflect.deleteProperty(parent, key)
+    // The hole is squashed below like the gaps in ordered arrays.
+    if (Array.isArray(parent)) arraysWithOrder.add(parent)
   }
 
   for (const orderedArray of Array.from(arraysWithOrder)) {

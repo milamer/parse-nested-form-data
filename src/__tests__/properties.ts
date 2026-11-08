@@ -6,13 +6,14 @@ import {
   MixedArrayError,
   parseFormData,
 } from '../'
+import {outcomeWithName} from './utils'
 
 type Entry = [string, string]
 type Data = string | Array<Data> | {[key: string]: Data}
 
 // Every key matching this pattern must round-trip. It can't produce a name
 // from Object.prototype (those are camelCase, start with `_`, or are longer),
-// so no rejected key is generated. Rejected keys are tested in `index.ts`.
+// so no rejected or removed key is generated. Those are tested in `index.ts`.
 const keyArb = fc.stringMatching(/^[a-z][a-z0-9_]{0,7}$/)
 
 // Containers are never empty: an empty object or array produces no entries,
@@ -97,6 +98,54 @@ function thrownBy(fn: () => unknown): unknown {
   }
 }
 
+// Renames `from` to `to` inside every key in `value` (`azz` => `atoString`).
+function renameKeys(value: unknown, from: string, to: string): unknown {
+  if (Array.isArray(value)) return value.map(item => renameKeys(item, from, to))
+  if (typeof value !== 'object' || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key.split(from).join(to),
+      renameKeys(item, from, to),
+    ]),
+  )
+}
+
+// Whether `value` isn't an empty object or array.
+function isNotEmpty(value: unknown): boolean {
+  return (
+    typeof value !== 'object' || value === null || Object.keys(value).length > 0
+  )
+}
+
+// Removes every `name` key from `value`, then the objects and arrays that are
+// left empty. Every entry ends in a value, so only entries through a `name`
+// key leave them empty.
+function withoutKey(value: unknown, name: string): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => withoutKey(item, name))
+      .filter(item => isNotEmpty(item))
+  }
+  if (typeof value !== 'object' || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== name)
+      .map(([key, item]) => [key, withoutKey(item, name)])
+      .filter(([, item]) => isNotEmpty(item)),
+  )
+}
+
+// The outcome of `entries` with `toString` for `NAME` if it were an unused
+// name: the same error, or else the same result without the `toString` keys
+// and the objects and arrays only they filled.
+function outcomeWithoutName(entries: Array<Entry>): unknown {
+  const outcome = outcomeWithName(entries, 'zz')
+  if (!('result' in outcome)) return outcome
+  return {
+    result: renameKeys(withoutKey(outcome.result, 'zz'), 'zz', 'toString'),
+  }
+}
+
 function isNoneOrLibraryError(error: unknown): boolean {
   return error === undefined || LIBRARY_ERRORS.some(cls => error instanceof cls)
 }
@@ -166,6 +215,24 @@ describe('properties', () => {
           for (const key of added) Reflect.deleteProperty(Object.prototype, key)
           expect(added).toStrictEqual([])
         }
+      }),
+    )
+  })
+
+  // An error that depended on the name would tell the client which
+  // properties exist on the server's `Object.prototype`.
+  it('treats a name on Object.prototype like an unused name, then removes its entries', () => {
+    const pathWithNameArb = fc
+      .tuple(
+        prefixArb,
+        fc.array(fc.oneof(pathTokenArb, fc.constant('NAME')), {maxLength: 12}),
+      )
+      .map(([prefix, tokens]) => prefix + tokens.join(''))
+    fc.assert(
+      fc.property(entriesArb(pathWithNameArb), entries => {
+        expect(outcomeWithName(entries, 'toString')).toStrictEqual(
+          outcomeWithoutName(entries),
+        )
       }),
     )
   })

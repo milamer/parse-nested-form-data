@@ -6,6 +6,7 @@ import {
   MixedArrayError,
   parseFormData,
 } from '../'
+import {outcomeWithName} from './utils'
 
 describe('basic functionality', () => {
   describe('transform value', () => {
@@ -505,24 +506,112 @@ function parseErrorWithoutPrototypeProperty(key: string): unknown {
 
 describe('Object.prototype names', () => {
   // Fields with these names would shadow built-in methods on the parsed
-  // object (e.g. `hasOwnProperty`), so they are rejected.
-  const names = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
+  // object (e.g. `hasOwnProperty`), so their entries are removed. `__proto__`
+  // and `constructor` throw instead (see above).
+  const names = Object.getOwnPropertyNames(Object.prototype).filter(
+    name => name !== '__proto__' && name !== 'constructor',
+  )
   it.each(
-    names.flatMap(name => [
-      [name, name],
-      [`a.${name}`, `a.${name}`],
-      [`${name}.a`, name],
-    ]),
-  )('%s -> ForbiddenKeyError(%s)', (path, key) => {
-    expect(() => parseFormData([[path, 'x']])).toThrow(
-      new ForbiddenKeyError(key),
-    )
+    names.flatMap(name => [name, `a.${name}`, `${name}.a`, `a[0].${name}`]),
+  )('removes the entry %s', path => {
+    const result = parseFormData([
+      [path, 'x'],
+      ['b', 'y'],
+    ])
+    expect(result).toStrictEqual({b: 'y'})
   })
 
-  it('rejects a name after an array part', () => {
-    expect(() => parseFormData([['a[0].valueOf', 'x']])).toThrow(
-      new ForbiddenKeyError('a[0].valueOf'),
-    )
+  // The same results as `qs`.
+  it.each<[Array<[string, string]>, object]>([
+    [
+      [
+        ['a.b', '1'],
+        ['a.toString.c', 'x'],
+      ],
+      {a: {b: '1'}},
+    ],
+    [
+      [
+        ['a[0].valueOf', 'x'],
+        ['a[1]', 'y'],
+      ],
+      {a: ['y']},
+    ],
+    [
+      [
+        ['a[]', '1'],
+        ['a[].toString', '2'],
+        ['a[]', '3'],
+      ],
+      {a: ['1', '3']},
+    ],
+    [[['x.y[0].toString', '1']], {}],
+    [[['a[].toString', '1']], {}],
+    [
+      [
+        ['x.toString', '1'],
+        ['x.b', '2'],
+      ],
+      {x: {b: '2'}},
+    ],
+    [
+      [
+        ['x.b', '2'],
+        ['x.toString', '1'],
+      ],
+      {x: {b: '2'}},
+    ],
+    [
+      [
+        ['a[2].toString', '1'],
+        ['a[2].b', '2'],
+        ['a[5].valueOf', '3'],
+      ],
+      {a: [{b: '2'}]},
+    ],
+  ])('keeps the other entries of %j', (entries, expected) => {
+    expect(parseFormData(entries)).toStrictEqual(expected)
+  })
+
+  // A transform in JS (or with a cast) can return an object or array as the
+  // value, which is removed like any other value.
+  it.each<[string, unknown]>([
+    ['toString', {k: 'x'}],
+    ['a.toString', {k: 'x'}],
+    ['toString', ['x']],
+    ['a[0].toString', ['x']],
+  ])('removes the entry %s with the value %j', (path, value) => {
+    const result = parseFormData([[path, 'x']], {
+      transformEntry: ([entryPath]) => ({
+        path: entryPath,
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
+        value: value as string,
+      }),
+    })
+    expect(result).toStrictEqual({})
+  })
+
+  // The same errors as for an unused name, so an error doesn't tell the
+  // client which names exist on Object.prototype.
+  it.each([
+    ['NAME', 'NAME'],
+    ['a', 'a.NAME'],
+    ['a.NAME', 'a'],
+    ['NAME.a', 'NAME'],
+    ['NAME[]', 'NAME[0]'],
+    ['NAME[0]', 'NAME.a'],
+  ])('%s, %s throws as for an unused name', (first, second) => {
+    const outcomeWith = (name: string): unknown =>
+      outcomeWithName(
+        [
+          [first, 'x'],
+          [second, 'x'],
+        ],
+        name,
+      )
+    expect(outcomeWith('toString')).toStrictEqual(outcomeWith('unused'))
+    // An error, not a result.
+    expect(outcomeWith('toString')).toHaveProperty('error')
   })
 
   // Like `node --disable-proto=delete`, which removes `__proto__`.
@@ -541,20 +630,42 @@ describe('Object.prototype names', () => {
       Reflect.deleteProperty(proto, 'patched')
     })
 
-    it('is rejected and the added value stays unchanged', () => {
+    it('is removed and the added value stays unchanged', () => {
       const shared = {}
       Object.defineProperty(proto, 'patched', {
         value: shared,
         configurable: true,
         writable: true,
       })
-      expect(() => parseFormData([['patched.x', '1']])).toThrow(
-        new ForbiddenKeyError('patched'),
-      )
-      expect(() => parseFormData([['a.patched', '1']])).toThrow(
-        new ForbiddenKeyError('a.patched'),
-      )
+      expect(
+        parseFormData([
+          ['patched.x', '1'],
+          ['a.patched', '1'],
+        ]),
+      ).toStrictEqual({})
       expect(shared).toStrictEqual({})
+    })
+
+    it('is removed without calling its setter', () => {
+      const values: Array<unknown> = []
+      Object.defineProperty(proto, 'patched', {
+        get: () => values,
+        set: (value: unknown) => {
+          values.push(value)
+        },
+        configurable: true,
+      })
+      expect(parseFormData([['a.patched', '1']])).toStrictEqual({})
+      expect(values).toStrictEqual([])
+    })
+
+    it('is removed when it is read-only', () => {
+      Object.defineProperty(proto, 'patched', {
+        value: 'fixed',
+        configurable: true,
+        writable: false,
+      })
+      expect(parseFormData([['a.patched', '1']])).toStrictEqual({})
     })
   })
 })

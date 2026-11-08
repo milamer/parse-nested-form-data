@@ -215,19 +215,32 @@ parseFormData(formData)
 // }
 ```
 
-`__proto__`, `constructor`, `prototype` and the name of any property on
-`Object.prototype` at parse time (`toString`, `hasOwnProperty`, ..., including
-any added by a newer runtime or by other code) can't be used as an object path
-part, at any position. The first three could modify `Object.prototype`; the
-others would shadow built-in methods on the parsed object, or be read as an
-existing value. `parseFormData` throws a `ForbiddenKeyError` with the path up to
-that part:
+`__proto__`, `constructor` and `prototype` can't be used as an object path part,
+at any position, because they could modify `Object.prototype`. `parseFormData`
+throws a `ForbiddenKeyError` with the path up to that part:
 
 ```ts
 const formData = new FormData()
-formData.append('user.toString', 'x')
+formData.append('user.__proto__.isAdmin', 'true')
 parseFormData(formData)
-// throws ForbiddenKeyError('user.toString')
+// throws ForbiddenKeyError('user.__proto__')
+```
+
+The name of any other property on `Object.prototype` at parse time (`toString`,
+`hasOwnProperty`, ..., including any added by a newer runtime or by other code)
+would shadow a built-in method on the parsed object, so every entry with such a
+name in its path is removed, like [`qs`](https://github.com/ljharb/qs) does. The
+entry is parsed like any other entry first, so it causes the same errors as an
+unused name. An error therefore doesn't tell the client which properties exist
+on the server's `Object.prototype`:
+
+```ts
+const formData = new FormData()
+formData.append('user.name', 'Ada')
+formData.append('user.toString', 'x')
+formData.append('settings.valueOf', 'x')
+parseFormData(formData)
+// {user: {name: 'Ada'}}
 ```
 
 ### Files
