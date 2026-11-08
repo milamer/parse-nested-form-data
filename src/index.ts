@@ -598,10 +598,9 @@ export function parseFormData(
     })
   }
 
-  // Undo the removed entries, children before their parents. A value is
-  // always deleted, whatever it is. A container is deleted only if it's empty
-  // now: a kept entry always ends in a value, so an empty container was only
-  // used by removed entries.
+  // Delete what the removed entries added. Go backwards so children are
+  // deleted before their parents. A container that still has keys is also
+  // used by a kept entry, so it stays.
   for (let idx = createdByRemoved.length - 1; idx >= 0; idx--) {
     const [parent, key, container] = createdByRemoved[idx]!
     if (container && Object.keys(container).length > 0) continue
