@@ -545,7 +545,13 @@ describe('bracket keys', () => {
     ['0]', {'0]': 'x'}],
     ['a.]', {a: {']': 'x'}}],
     ['a[b]]', {a: {b: {']': 'x'}}}],
+    ['a[b]]]', {a: {b: {']]': 'x'}}}],
+    ['a[b]]c', {a: {b: {']c': 'x'}}}],
+    ['a[b]].c', {a: {b: {']': {c: 'x'}}}}],
+    ['a[b]][c]', {a: {b: {']': {c: 'x'}}}}],
+    ['a[[0]]]', {a: {'[0]': {']': 'x'}}}],
     ['a[fo]o]', {a: {fo: {'o]': 'x'}}}],
+    ['a[0]]', {a: [{']': 'x'}]}],
     ['a[]]', {a: [{']': 'x'}]}],
   ])('keeps any other `]` in the key: %s', (path, expected) => {
     expect(parseFormData([[path, 'x']])).toStrictEqual(expected)
