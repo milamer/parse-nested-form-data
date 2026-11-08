@@ -336,23 +336,24 @@ function extractPathParts(path: string): Array<PathPart> {
 
 /**
  *
- * Returns the value accessed via `pathPart` in the `currentPathObject`
- * and a setter function to set the value in the `currentPathObject` via the
- * provided `pathPart`.
+ * Returns the value accessed via `pathPart` in the `currentPathObject`,
+ * a setter function to set the value in the `currentPathObject` via the
+ * provided `pathPart`, and the key (object key or array index) it uses.
  *
- * @param pathPart - the path part to get the setter and getter for
+ * @param pathPart - the path part to get the value, setter and key for
  * @param currentPathObject - the object at the current path (before the path part)
  * @param arraysWithOrder - a set of arrays that have an order
- * @returns the setter and getter for the path part
+ * @returns the current value, a setter for it, and the key (object key or
+ * array index) in `currentPathObject`
  *
  * @example
  * ```ts
  * const pathPart = {path: 'a', type: 'object', default: {}, pathToPart: 'a'}
  * const currentPathObject = {}
  * const arraysWithOrder = new Set()
- * const [value, setValue] = getSetterAndGetter(pathPart, currentPathObject, arraysWithOrder)
+ * const [value, setValue, key] = handlePathPart(pathPart, currentPathObject, arraysWithOrder)
  * setValue('b')
- * // => currentPathObject = {a: 'b'}
+ * // => currentPathObject = {a: 'b'}, key = 'a'
  * ```
  *
  * @example
@@ -360,9 +361,9 @@ function extractPathParts(path: string): Array<PathPart> {
  * const pathPart = {path: '0', type: 'array', default: [], pathToPart: 'a[0]'}
  * const currentPathObject = {a: []}
  * const arraysWithOrder = new Set()
- * const [value, setValue] = getSetterAndGetter(pathPart, currentPathObject, arraysWithOrder)
+ * const [value, setValue, key] = handlePathPart(pathPart, currentPathObject.a, arraysWithOrder)
  * setValue('b')
- * // => currentPathObject = {a: ['b']}
+ * // => currentPathObject = {a: ['b']}, key = 0
  * ```
  *
  */
