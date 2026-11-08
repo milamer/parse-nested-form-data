@@ -254,8 +254,7 @@ Paths with misplaced brackets are parsed without an error:
 
 - A `[` that no `]` closes stays in the key: `a[[0]` is the key `[0` in `a`, and
   `a[0` is the key `a[0`.
-- A `]` that doesn't close a `[` is part of the key: `a]b` is the key `a]b`, and
-  `a[b]]` is the key `b]` in `a`.
+- A `]` that doesn't close a `[` is part of the key: `a]b` is the key `a]b`.
 - Text after `]` is the next key: `a[0]b` is `a[0].b`.
 - Empty keys are skipped: `a..b`, `a.[b]` and `a[b].[c]` are `a.b`, `a.b` and
   `a.b.c`, and `[a]` is `a`.

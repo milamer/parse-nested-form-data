@@ -331,21 +331,17 @@ function extractPathParts(path: string): Array<PathPart> {
   for (let idx = 0; idx < path.length; idx++) {
     // A `[` that no `]` closes ends at the last `]` (`a[[0]` => key `[0`).
     // Without a `]` after it, it's part of the key (`a[0` => key `a[0`), like
-    // a `]` that closes no `[` (`a]b` => key `a]b`).
+    // a `]` that closes no `[` (`a]b` => key `a]b`, `a[b]]` => key `]` in `b`).
     const close = path[idx] === '[' ? (closeOf.get(idx) ?? lastClose) : -1
     if (path[idx] !== '.' && close < idx) continue
 
     addPart(path.slice(start, idx), 'object', idx)
     if (close > idx) {
-      // A `]` right after the bracket part closes no `[`, so it stays in the
-      // key (`a[b]]` => key `b]`).
-      let end = close
-      while (path[end + 1] === ']') end++
       // Digits or nothing is an array index, anything else is the key as it
       // is (`a[b.c]` => key `b.c`).
-      const key = path.slice(idx + 1, end)
-      addPart(key, /^\d*$/.test(key) ? 'array' : 'object', end + 1)
-      idx = end
+      const key = path.slice(idx + 1, close)
+      addPart(key, /^\d*$/.test(key) ? 'array' : 'object', close + 1)
+      idx = close
     }
     start = idx + 1
   }
