@@ -311,10 +311,10 @@ type PathPart = {
  */
 function closeOf(path: string, open: number, lastClose: number): number {
   if (open > lastClose) return -1
-  let depth = 0
+  let nesting = 0
   for (let idx = open; idx < lastClose; idx++) {
-    if (path[idx] === '[') depth++
-    else if (path[idx] === ']' && --depth === 0) return idx
+    if (path[idx] === '[') nesting++
+    else if (path[idx] === ']' && --nesting === 0) return idx
   }
   return lastClose
 }
