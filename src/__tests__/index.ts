@@ -6,6 +6,7 @@ import {
   MixedArrayError,
   parseFormData,
 } from '../'
+import {outcomeWithName} from './utils'
 
 describe('basic functionality', () => {
   describe('transform value', () => {
@@ -503,21 +504,6 @@ function parseErrorWithoutPrototypeProperty(key: string): unknown {
   return new Error(`expected ${key} to be rejected`)
 }
 
-// Parses `paths` with `name` filled in for the `NAME` placeholder and returns
-// the error message, or undefined if nothing was thrown. The message has the
-// placeholder back in place of `name`, so the errors for two names compare
-// equal when only the name differs.
-function errorWithName(paths: Array<string>, name: string): unknown {
-  try {
-    parseFormData(paths.map(path => [path.split('NAME').join(name), 'x']))
-  } catch (error) {
-    return error instanceof Error
-      ? `${error.constructor.name}: ${error.message.split(name).join('NAME')}`
-      : error
-  }
-  return undefined
-}
-
 describe('Object.prototype names', () => {
   // Fields with these names would shadow built-in methods on the parsed
   // object (e.g. `hasOwnProperty`), so their entries are removed. `__proto__`
@@ -573,10 +559,17 @@ describe('Object.prototype names', () => {
     ['NAME[]', 'NAME[0]'],
     ['NAME[0]', 'NAME.a'],
   ])('%s, %s throws as for an unused name', (first, second) => {
-    const errorWith = (name: string): unknown =>
-      errorWithName([first, second], name)
-    expect(errorWith('toString')).toStrictEqual(errorWith('unused'))
-    expect(errorWith('toString')).not.toBeUndefined()
+    const outcomeWith = (name: string): unknown =>
+      outcomeWithName(
+        [
+          [first, 'x'],
+          [second, 'x'],
+        ],
+        name,
+      )
+    expect(outcomeWith('toString')).toStrictEqual(outcomeWith('unused'))
+    // An error message, not a result.
+    expect(outcomeWith('toString')).toBeTypeOf('string')
   })
 
   // Like `node --disable-proto=delete`, which removes `__proto__`.

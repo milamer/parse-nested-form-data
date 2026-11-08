@@ -1,8 +1,10 @@
-import {defineConfig, type ViteUserConfig} from 'vitest/config'
+import {configDefaults, defineConfig, type ViteUserConfig} from 'vitest/config'
 
 const config: ViteUserConfig = defineConfig({
   test: {
     include: ['src/**/__tests__/**/*.ts'],
+    // Shared helpers, not a test file.
+    exclude: [...configDefaults.exclude, 'src/__tests__/utils.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
