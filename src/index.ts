@@ -299,15 +299,22 @@ type PathPart = {
   pathToPart: string
 }
 /**
- * Returns where the bracket part of the `[` at `open` ends, or -1 if it's part
- * of the key. Brackets nest like in qs (`a[b[c]]`: the last `]` closes the
- * first `[`). A `[` that no `]` closes ends at the last `]` (`a[[0]` => key
- * `[0`). Without a `]` after it, it's part of the key (`a[0` => key `a[0`),
- * like a `]` that closes no `[` (`a]b` => key `a]b`, `a[b]]` => key `]` in
- * `b`).
+ * Finds the `]` that ends the bracket part starting at the `[` at `open`.
+ * Returns -1 if this `[` is not a bracket part but a normal character of the key.
  *
- * The scan stops at the returned `]`, where the caller continues, so the
- * scans of a path don't overlap.
+ * Brackets can be nested, like in qs: in `a[b[c]]` the last `]` belongs to
+ * the first `[`.
+ *
+ * Special cases:
+ * - Some `[` are never closed. The part then ends at the last `]`:
+ *   `a[[0]` => key `[0`.
+ * - If there is no `]` after the `[` at all, the `[` is a normal character:
+ *   `a[0` => key `a[0`.
+ * - The same goes for a `]` without a `[`: `a]b` => key `a]b`, and
+ *   `a[b]]` => key `]` inside `b`.
+ *
+ * The scan stops at the returned `]`. The caller continues from there, so no
+ * character of the path is scanned twice.
  */
 function closeOf(path: string, open: number, lastClose: number): number {
   if (open > lastClose) return -1
