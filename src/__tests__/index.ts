@@ -307,6 +307,20 @@ describe('depth option', () => {
     )
   })
 
+  it('stops at the first part over the limit, before a later forbidden key', () => {
+    expect(() => parseFormData([['a.b.c.__proto__', 'x']], {depth: 2})).toThrow(
+      new DepthLimitError('a.b.c'),
+    )
+  })
+
+  it.each([
+    [['__proto__.x', 'a.b.c'], new ForbiddenKeyError('__proto__')],
+    [['a.b.c', '__proto__.x'], new DepthLimitError('a.b.c')],
+  ])('throws the error of the first failing entry in %j', (paths, error) => {
+    const entries = paths.map((path): [string, string] => [path, 'x'])
+    expect(() => parseFormData(entries, {depth: 2})).toThrow(error)
+  })
+
   it('names the path part over the limit in the error', () => {
     const error = new DepthLimitError('a.b')
     expect(error).toBeInstanceOf(Error)
