@@ -203,10 +203,12 @@ function outcomeOf(parse: () => unknown): Outcome {
   }
 }
 
-// The outcome of `entries` with `depth`, worked out without the limit. Entries
-// are built in order, so it's the unlimited outcome up to the first entry with
-// more path parts than `depth`, which throws `DepthLimitError` with the path up
-// to its part `depth + 1`.
+// What `entries` should give with `depth`, worked out without using the limit.
+// Entries are read one by one, in order. Every entry before the first one with
+// more than `depth` path parts gives the same result as with no limit, and that
+// includes any error they throw. If none of them throws, the first entry with
+// too many parts throws `DepthLimitError`. The error shows its path only up to
+// the end of part number `depth + 1`.
 function expectedWithDepth(entries: Array<Entry>, depth: number): Outcome {
   const paths = entries.map(entry => transformedPath(entry))
   const tooDeep = paths.findIndex(path => partsOf(path).length > depth)
