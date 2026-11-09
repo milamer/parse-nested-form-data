@@ -3,6 +3,15 @@ import {defineConfig, type UserConfig} from 'tsdown'
 // The published file names are part of the 1.x contract (`main`, `module`,
 // `types` in package.json, CDN links to the UMD build), so they are pinned here:
 //   dist/parse-nested-form-data.{esm,cjs,umd,umd.min}.js + dist/index.d.ts
+// The source is split into modules, so the header goes on top of each bundle
+// here instead of into one of them.
+const LICENSE = `/**
+ * @name parse-nested-form-data
+ * @license MIT license.
+ * @copyright (c) 2022 Christian Schurr
+ * @author Christian Schurr <chris@schurr.dev>
+ */`
+
 const shared = {
   entry: {'parse-nested-form-data': 'src/index.ts'},
   platform: 'neutral',
@@ -10,6 +19,7 @@ const shared = {
   hash: false,
   clean: false, // `npm run build` cleans dist once before all configs run
   dts: false,
+  banner: {js: LICENSE, dts: LICENSE},
 } satisfies UserConfig
 
 const umd = {
