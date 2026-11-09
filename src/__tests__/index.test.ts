@@ -10,6 +10,9 @@ import {
 } from '../'
 import {outcomeWithName} from './utils'
 
+// The tests run on Node, but the project has no `@types/node`.
+declare const process: {env: Record<string, string | undefined>}
+
 describe('basic functionality', () => {
   describe('transform value', () => {
     it('can parse Numbers `+foo -> {foo: Number($value)}`', () => {
@@ -26,6 +29,14 @@ describe('basic functionality', () => {
       const result = parseFormData(formData)
       expect(result).toEqual({
         foo: false,
+      })
+    })
+    it('can parse true Booleans `&foo: true -> {foo: true}`', () => {
+      const formData = new FormData()
+      formData.append('&foo', 'true')
+      const result = parseFormData(formData)
+      expect(result).toEqual({
+        foo: true,
       })
     })
     it("can parse checkbox Booleans `&foo: on -> {foo: $value === 'on'}`", () => {
@@ -801,7 +812,10 @@ describe('bracket keys', () => {
 
   // Each shape needs the matching `]` of every `[`. Searching for it again
   // for every `[` takes seconds at this length.
-  it.each([
+  // Skipped during mutation testing: Stryker's instrumented code runs ~4x
+  // slower on all CPU cores at once, so these tests fail without a mutant and
+  // "kill" whichever mutant is active.
+  it.skipIf(process.env['STRYKER_MUTATOR_WORKER'] !== undefined).each([
     ['a[b]', 'x'],
     ['a[', ''],
     ['a[0]b', ''],
