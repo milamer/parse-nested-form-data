@@ -1,7 +1,7 @@
 <div align="center">
 <h1>parse-nested-form-data</h1>
 
-<p>A tiny node module for parsing FormData by name into objects and arrays</p>
+<p>Parse FormData into nested objects and arrays, based on the field names</p>
 </div>
 
 ---
@@ -17,35 +17,52 @@
 [![Code of Conduct][coc-badge]][coc]
 <!-- prettier-ignore-end -->
 
-## The problem
+A form sends flat name-value pairs. This library turns them into nested objects
+and arrays, with numbers, booleans and `null`. The field names tell it how.
 
-1.  You use Forms to upload data to your server (e.g. with remix-run)
-2.  You want a way to upload objects and arrays with booleans and numbers
-3.  You do not want to transfer the data per hand
+```html
+<form method="post">
+  <input name="user.name" value="Ada" />
+  <input name="+user.age" value="36" />
+  <input name="&user.admin" type="checkbox" checked />
+  <input name="tags[]" value="math" />
+  <input name="tags[]" value="code" />
+</form>
+```
 
-## This solution
+```ts
+parseFormData(formData)
+// {
+//   user: {name: 'Ada', age: 36, admin: true},
+//   tags: ['math', 'code'],
+// }
+```
 
-A parse functions that uses the name prop to tells the parser how to create an
-object out of the values. You can tell the parser to do not parse empty values.
+It has no dependencies and works in all modern JavaScript runtimes (see
+[Supported runtimes](#supported-runtimes)).
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
-- [Installation](#installation)
-- [Name](#name)
-  - [Boolean](#boolean)
-  - [Number](#number)
+- [Install](#install)
+- [Usage](#usage)
+- [Field names](#field-names)
+  - [Numbers](#numbers)
+  - [Booleans](#booleans)
   - [Null](#null)
-  - [Array](#array)
-  - [Object](#object)
+  - [Arrays](#arrays)
+  - [Objects](#objects)
   - [Files](#files)
-- [Basic Usage](#basic-usage)
-  - [Transform values](#transform-values)
-- [Advanced usage](#advanced-usage)
-  - [Options](#options)
-  - [removeEmptyString: `[boolean]`](#removeemptystring-boolean)
-  - [depth: `[number]`](#depth-number)
-  - [transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`](#transformentry-entry-path-string-value-string--file-defaulttransform-defaulttransform--path-string-value-jsonleafvalue)
+- [API](#api)
+  - [parseFormData(formData, options?)](#parseformdataformdata-options)
+    - [formData](#formdata)
+    - [options](#options)
+      - [removeEmptyString](#removeemptystring)
+      - [depth](#depth)
+      - [transformEntry](#transformentry)
+- [Errors](#errors)
+- [Security](#security)
+- [Supported runtimes](#supported-runtimes)
 - [Issues](#issues)
   - [🐛 Bugs](#-bugs)
   - [💡 Feature Requests](#-feature-requests)
@@ -55,330 +72,216 @@ object out of the values. You can tell the parser to do not parse empty values.
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-## Installation
-
-This module is distributed via [npm][npm] which is bundled with [node][node] and
-should be installed as one of your project's `dependencies`:
+## Install
 
 ```sh
 npm install parse-nested-form-data
 ```
 
-and then import it in your project:
+## Usage
 
 ```ts
 import {parseFormData} from 'parse-nested-form-data'
+
+const data = parseFormData(await request.formData())
 ```
 
-## Name
+`parseFormData` reads each entry, puts its value at the place its name tells,
+and returns a new object. The input stays unchanged.
 
-The name prop is used to tell the parser how to create an object out of the
-values. The name prop is a string that can contain the following characters:
+## Field names
 
-- `.`: to create a nested object
-- `[$key]`: to create a nested object (same as `.$key`)
-- `[]`: to create an array (pushes value)
-- `[$order]`: to create an array (sets value at index and squashes array)
-- `&`: to transform the value to a boolean
-- `-`: to transform the value to null
-- `+`: to transform the value to a number
+| In the name      | Meaning                              | Name and value | Result          |
+| ---------------- | ------------------------------------ | -------------- | --------------- |
+| `.key`           | A key in an object                   | `a.b` = `x`    | `{a: {b: 'x'}}` |
+| `[key]`          | A key in an object, same as `.key`   | `a[b]` = `x`   | `{a: {b: 'x'}}` |
+| `[]`             | Add the value to the end of an array | `a[]` = `x`    | `{a: ['x']}`    |
+| `[0]`, `[1]`, …  | Put the value at this array position | `a[0]` = `x`   | `{a: ['x']}`    |
+| `+` at the start | Change the value to a number         | `+a` = `36`    | `{a: 36}`       |
+| `&` at the start | Change the value to a boolean        | `&a` = `on`    | `{a: true}`     |
+| `-` at the start | Change the value to `null`           | `-a` = `x`     | `{a: null}`     |
 
-### Boolean
+You can combine them, for example `+orders[0].items[].price`.
 
-If the name prop starts with a `&` the value will be transformed to a boolean.
+In this README, the name without its `+`, `&` or `-` is the **path**. Each
+`key`, `.key`, `[key]`, `[]` and `[0]` in it is a **path part**: `a.b[0]` has
+three path parts.
 
-True if the value has the following values:
+### Numbers
 
-- `true`
-- `1`
-- `on`
+A name that starts with `+` changes the value with `Number(value)`. A value that
+isn't a number gives `NaN`. An empty string gives `0`.
 
 ```ts
 const formData = new FormData()
-formData.append('&isTrue', 'true')
-formData.append('&isFalse', 'false')
-formData.append('&isTrue1', '1')
-formData.append('&isFalse1', '0')
-formData.append('&isTrue2', 'on')
-formData.append('&isFalse2', 'off')
+formData.append('+a', '1')
+formData.append('+b', '1.5')
+formData.append('+c', 'x')
 parseFormData(formData)
-// {
-//   isTrue: true,
-//   isFalse: false,
-//   isTrue1: true,
-//   isFalse1: false,
-//   isTrue2: true,
-//   isFalse2: false,
-// }
+// {a: 1, b: 1.5, c: NaN}
 ```
 
-### Number
+### Booleans
 
-If the name prop starts with a `+` the value will be transformed to a number.
+A name that starts with `&` changes the value to a boolean. The value `on`,
+`true` or any number other than `0` gives `true`. All other values give `false`.
 
 ```ts
 const formData = new FormData()
-formData.append('+number', '1')
-formData.append('+number2', '1.1')
-formData.append('+number3', 'a')
+formData.append('&a', 'on')
+formData.append('&b', 'true')
+formData.append('&c', '1')
+formData.append('&d', 'off')
+formData.append('&e', 'false')
+formData.append('&f', '0')
 parseFormData(formData)
-// {
-//   number: 1,
-//   number2: 1.1,
-//   number3: NaN,
-// }
+// {a: true, b: true, c: true, d: false, e: false, f: false}
 ```
+
+A checkbox sends `on` when it's checked. When it isn't checked, the browser
+sends nothing, so the key is missing from the result.
 
 ### Null
 
-If the name prop starts with a `-` the value will be transformed to null.
+A name that starts with `-` changes the value to `null`, whatever the value is.
 
 ```ts
 const formData = new FormData()
-formData.append('-null', 'null')
-formData.append('-ignored', 'ignored')
+formData.append('-a', 'x')
 parseFormData(formData)
-// {
-//   null: null,
-//   ignored: null,
-// }
+// {a: null}
 ```
 
-### Array
+### Arrays
 
-If a path of the name prop ends with `[]` the value will be pushed to an array.
-If the path of the name prop ends with `[$order]` the value will be set at the
-index of the order. Cannot be mixed with `[]`.
+`[]` adds the value to the end of the array, in the order of the entries:
 
 ```ts
 const formData = new FormData()
-formData.append('array[0]', '1')
-formData.append('array[1]', '2')
-formData.append('array[2]', '3')
-formData.append('array[3]', '4')
+formData.append('a[]', '1')
+formData.append('a[]', '2')
 parseFormData(formData)
-// {
-//   array: ['1', '2', '3', '4'],
-// }
+// {a: ['1', '2']}
 ```
+
+`[0]`, `[1]`, … put the value at that position. The order of the entries doesn't
+matter. Gaps are removed, so `a[1]` and `a[5]` give an array of two values:
 
 ```ts
 const formData = new FormData()
-formData.append('array[]', '1')
-formData.append('array[]', '2')
-formData.append('array[]', '3')
+formData.append('a[5]', 'second')
+formData.append('a[1]', 'first')
 parseFormData(formData)
-// {
-//   array: ['1', '2', '3'],
-// }
+// {a: ['first', 'second']}
 ```
 
-Also works with nested objects:
+One array can't use both `[]` and `[0]`. That throws a `MixedArrayError`.
+
+Arrays can hold objects and other arrays:
 
 ```ts
 const formData = new FormData()
-formData.append('array[0].a', '1')
-formData.append('array[1].a', '2')
-formData.append('array[2].a', '3')
+formData.append('a[0].b', '1')
+formData.append('a[1].b', '2')
+formData.append('c[0][]', '3')
+formData.append('c[0][]', '4')
+formData.append('c[1][]', '5')
 parseFormData(formData)
-// {
-//   array: [{a: '1'}, {a: '2'}, {a: '3'}],
-// }
+// {a: [{b: '1'}, {b: '2'}], c: [['3', '4'], ['5']]}
 ```
 
-Also works with nested arrays:
+### Objects
+
+`.key` and `[key]` mean the same thing, so `a.b` and `a[b]` are the same key.
+Only digits in brackets (`[0]`) make an array. You can mix both forms with each
+other and with arrays:
 
 ```ts
 const formData = new FormData()
-formData.append('array[0][]', '1')
-formData.append('array[0][]', '2')
-formData.append('array[1][]', '3')
-formData.append('array[1][]', '4')
+formData.append('a[b]', '1')
+formData.append('a.c[0].d', '2')
+formData.append('a[c][1][d]', '3')
 parseFormData(formData)
-// {
-//   array: [['1', '2'], ['3', '4']],
-// }
+// {a: {b: '1', c: [{d: '2'}, {d: '3'}]}}
 ```
 
-### Object
-
-If the name prop contains a `.` the value will be nested in an object.
+The text in brackets is the key exactly as written. It can contain `.`, `[` and
+`]`, if the brackets inside are balanced:
 
 ```ts
 const formData = new FormData()
-formData.append('object.a', '1')
-formData.append('object.b', '2')
+formData.append('a[b.c]', '1')
+formData.append('a[d[e]]', '2')
 parseFormData(formData)
-// {
-//   object: {
-//     a: '1',
-//     b: '2',
-//   },
-// }
+// {a: {'b.c': '1', 'd[e]': '2'}}
 ```
 
-A key in brackets works the same as a key after a `.`, so `object[a]` and
-`object.a` refer to the same key. Only digits in brackets (`[0]`) create an
-array. Both forms can be mixed with each other and with arrays:
+Brackets in the wrong place don't cause an error:
 
-```ts
-const formData = new FormData()
-formData.append('object[a]', '1')
-formData.append('object.b[0].c', '2')
-formData.append('object[b][1][c]', '3')
-parseFormData(formData)
-// {
-//   object: {
-//     a: '1',
-//     b: [{c: '2'}, {c: '3'}],
-//   },
-// }
-```
-
-The text in brackets is used as the key as it is, so it can contain `.`, `[` and
-`]` (brackets inside must be balanced):
-
-```ts
-const formData = new FormData()
-formData.append('object[a.b]', '1')
-formData.append('object[c[d]]', '2')
-parseFormData(formData)
-// {
-//   object: {
-//     'a.b': '1',
-//     'c[d]': '2',
-//   },
-// }
-```
-
-Paths with misplaced brackets are parsed without an error:
-
-- A `[` that no `]` closes stays in the key: `a[[0]` is the key `[0` in `a`, and
+- A `[` without a matching `]` stays in the key. `a[[0]` is the key `[0` in `a`.
   `a[0` is the key `a[0`.
-- A `]` that doesn't close a `[` is part of the key: `a]b` is the key `a]b`.
-- Text after `]` is the next key: `a[0]b` is `a[0].b`.
-- Empty keys are skipped: `a..b`, `a.[b]` and `a[b].[c]` are `a.b`, `a.b` and
-  `a.b.c`, and `[a]` is `a`.
-
-`__proto__`, `constructor` and `prototype` can't be used as an object path part,
-at any position, with or without brackets, because they could modify
-`Object.prototype`. `parseFormData` throws a `ForbiddenKeyError` with the path
-up to that part, cut to 100 characters plus `...` when it's longer:
-
-```ts
-const formData = new FormData()
-formData.append('user.__proto__.isAdmin', 'true')
-parseFormData(formData)
-// throws ForbiddenKeyError('user.__proto__')
-```
-
-The name of any other property on `Object.prototype` at parse time (`toString`,
-`hasOwnProperty`, ..., including any added by a newer runtime or by other code)
-would shadow a built-in method on the parsed object, so every entry with such a
-name in its path is removed, like [`qs`](https://github.com/ljharb/qs) does. The
-entry is parsed like any other entry first, so it causes the same errors as an
-unused name. An error therefore doesn't tell the client which properties exist
-on the server's `Object.prototype`:
-
-```ts
-const formData = new FormData()
-formData.append('user.name', 'Ada')
-formData.append('user.toString', 'x')
-formData.append('settings.valueOf', 'x')
-parseFormData(formData)
-// {user: {name: 'Ada'}}
-```
+- A `]` without a matching `[` stays in the key. `a]b` is the key `a]b`.
+- Text after `]` starts the next key. `a[0]b` is the same as `a[0].b`.
+- Empty keys are skipped. `a..b` and `a.[b]` are the same as `a.b`, and `[a]` is
+  the same as `a`.
 
 ### Files
 
-`File` values are returned as they are, whether they are native or come from a
-polyfill such as `@remix-run/web-file`. A file is a leaf value, so a path can't
-continue below it:
+`File` values stay as they are. This includes native files and files from a
+polyfill such as `@remix-run/web-file`. A file is always the end of a path:
 
 ```ts
 const formData = new FormData()
 formData.append('avatar', new File(['...'], 'avatar.png'))
 parseFormData(formData)
-// { avatar: File }
+// {avatar: File}
 
 formData.append('avatar.name', 'me.png')
 parseFormData(formData)
 // throws DuplicateKeyError('avatar')
 ```
 
-## Basic Usage
+## API
 
-### Transform values
+### parseFormData(formData, options?)
 
-```ts
-const formData = new FormData()
-formData.append('+a', '1')
-formData.append('&b', 'true')
-formData.append('-c', 'null')
-formData.append('d', 'foo')
-parseFormData(formData)
-// => {a: 1, b: true, c: null, d: 'foo'}
-```
+Returns a new object with the parsed values.
 
-## Advanced usage
+#### formData
 
-Complex examples:
+Type: `Iterable<[string, string | File]>`
 
-```ts
-const formData = new FormData()
-formData.append('a[].b.c', '1')
-formData.append('a[].b.d', '2')
-formData.append('a[]', '3')
-formData.append('b[0]', '4')
-formData.append('+b[100]', '5')
-parseFormData(formData)
-// {
-//   a: [{b: {c: '1'}}, {b: {d: '2'}}, '3'],
-//   b: ['4', 5],
-// }
-```
+A `FormData` object, or any other list of `[name, value]` pairs, for example
+`[['a.b', 'x']]` or a `URLSearchParams` object.
 
-### Options
+#### options
 
-The second argument is an option object with following properties:
+Type: `object`
 
-### removeEmptyString: `[boolean]`
+##### removeEmptyString
 
-_Default: `false`_
+Type: `boolean`\
+Default: `false`
 
-If `true` empty strings will be removed from the result.
+Skip all entries whose value is an empty string (`''`).
 
 ```ts
 const formData = new FormData()
-formData.append('foo[1].foo', '')
-formData.append('foo[1].bar', 'test2')
-formData.append('foo[0].foo', 'test3')
-formData.append('foo[0].baz', '4')
-
+formData.append('a', '')
+formData.append('b', 'x')
 parseFormData(formData, {removeEmptyString: true})
-// {foo: [{foo: 'test3', baz: '4'}, {bar: 'test2'}]}
+// {b: 'x'}
 ```
 
-### depth: `[number]`
+##### depth
 
-_Default: `Infinity`_
+Type: `number`\
+Default: `Infinity`
 
-The maximum number of path parts in a path. Every part counts, so `a.b[0]` and
-`a[b][]` both have 3. A path with more parts throws a `DepthLimitError` with the
-path up to the first part over the limit, cut to 100 characters plus `...` when
-it's longer. Within one entry the depth is checked first, so a path that's too
-deep throws `DepthLimitError` even if it would also throw another error, like a
-`ForbiddenKeyError` for `__proto__`. Entries are parsed in order, so an earlier
-entry's error wins. The depth is checked after `transformEntry`, and with
-`removeEmptyString` an entry with an empty string is removed before its depth is
-checked, so it never throws. Must be a positive integer or `Infinity`, otherwise
-`parseFormData` throws a `TypeError`.
-
-The parser itself handles any depth, but a field like `a.a.a…` with thousands of
-parts creates an object that crashes code walking it recursively
-(`JSON.stringify`, validators, deep clones). When the input comes from untrusted
-clients, set a limit; `depth: 32` fits nearly every form. Version 2.0 will lower
-the default from `Infinity`.
+The maximum number of path parts in one path. All parts count, so `a.b[0]` and
+`a[b][]` both have three. A longer path throws a [`DepthLimitError`](#errors).
+The value must be a positive integer or `Infinity`. Other values throw a
+`TypeError`.
 
 ```ts
 const formData = new FormData()
@@ -391,12 +294,30 @@ parseFormData(formData, {depth: 3})
 // throws DepthLimitError('user.address.geo.lat')
 ```
 
-### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`
+The parser can handle any depth. But a field like `a.a.a…` with thousands of
+parts makes an object that crashes code that walks it recursively, for example
+`JSON.stringify`, validators or deep clones. If the input comes from untrusted
+clients, set a limit. `depth: 32` is enough for almost every form. Version 2.0
+will change the default to a smaller number.
+
+The depth is checked after `transformEntry`. An entry that `removeEmptyString`
+skips is never checked.
+
+##### transformEntry
+
+Type:
+`(entry: [path: string, value: string | File], defaultTransform) => {path: string, value: string | number | boolean | null | File}`\
+Default:
+the built-in transform for `+`, `&` and `-`
+
+Changes each entry before it's parsed. It gets the entry as `[name, value]` and
+the built-in transform. It must return the path and the value for the result.
+Call `defaultTransform(entry)` to keep `+`, `&` and `-` working:
 
 ```ts
 const formData = new FormData()
-formData.append('a', 'a')
-formData.append('b', 'b')
+formData.append('a', 'x')
+formData.append('+b', '1')
 parseFormData(formData, {
   transformEntry: (entry, defaultTransform) => {
     const {path, value} = defaultTransform(entry)
@@ -406,8 +327,100 @@ parseFormData(formData, {
     }
   },
 })
-// => {a: 'A', b: 'B'}
+// {a: 'X', b: 1}
 ```
+
+## Errors
+
+`parseFormData` stops at the first error. All error classes are exported:
+
+```ts
+import {
+  DepthLimitError,
+  DuplicateKeyError,
+  ForbiddenKeyError,
+  MixedArrayError,
+} from 'parse-nested-form-data'
+```
+
+| Error               | Thrown when                                                              | Example names                            |
+| ------------------- | ------------------------------------------------------------------------ | ---------------------------------------- |
+| `DuplicateKeyError` | Two entries set the same path, or use a path part in two different ways. | `a` and `a`; `a` and `a.b`; `a.b`, `a[]` |
+| `MixedArrayError`   | One array uses both `[]` and `[0]`.                                      | `a[]` and `a[0]`                         |
+| `ForbiddenKeyError` | A path part is `__proto__`, `constructor` or `prototype`.                | `__proto__.x`; `a[constructor]`          |
+| `DepthLimitError`   | A path has more path parts than the `depth` option allows.               | `a.b.c` with `depth: 2`                  |
+| `TypeError`         | The `depth` option isn't a positive integer or `Infinity`.               | `depth: 0`                               |
+
+Each library error has a `key` property. It's the path up to the path part that
+caused the error. For example, `a.b` = `y` and then `a.b[0]` = `x` throw
+`DuplicateKeyError('a.b')`. In `ForbiddenKeyError` and `DepthLimitError`, a
+`key` longer than 100 characters is cut to 100 characters plus `...`.
+
+`key` is the path after `transformEntry`, not the field name. So it doesn't have
+the `+`, `&` or `-`: `+a.b.c` with `depth: 2` throws `DepthLimitError('a.b.c')`.
+A custom `transformEntry` can change the path completely. If you use `key` to
+find the form field, undo your own transform first.
+
+The entries are parsed in order, so the error of an earlier entry comes first.
+In one entry, the depth is checked first: a path that's too deep throws
+`DepthLimitError`, even if it has `__proto__` in it.
+
+```ts
+try {
+  parseFormData(formData)
+} catch (error) {
+  if (error instanceof DuplicateKeyError) {
+    return badRequest(`The field ${error.key} is used more than once`)
+  }
+  throw error
+}
+```
+
+## Security
+
+`__proto__`, `constructor` and `prototype` could change `Object.prototype`. So a
+path part with one of these names throws a `ForbiddenKeyError`, in every
+position, with or without brackets:
+
+```ts
+const formData = new FormData()
+formData.append('user.__proto__.isAdmin', 'true')
+parseFormData(formData)
+// throws ForbiddenKeyError('user.__proto__')
+```
+
+Other names that exist on `Object.prototype` at parse time (`toString`,
+`hasOwnProperty`, …, and names that a newer runtime or other code adds) would
+hide a built-in method of the result. So the parser removes every entry with
+such a name in its path. It parses the entry like any other entry first, so the
+entry causes the same errors as any other name. Because of this, an error
+doesn't tell the client which properties exist on the server's
+`Object.prototype`.
+
+```ts
+const formData = new FormData()
+formData.append('user.name', 'Ada')
+formData.append('user.toString', 'x')
+formData.append('settings.valueOf', 'x')
+parseFormData(formData)
+// {user: {name: 'Ada'}}
+```
+
+For input from untrusted clients, also set the [`depth`](#depth) option.
+
+## Supported runtimes
+
+The library uses only ES2020 and no runtime APIs. It works in:
+
+- browsers
+- Node.js (CI tests versions 22, 24 and 26)
+- Deno
+- Bun
+- Cloudflare Workers
+- Vercel (Edge and Node.js runtimes)
+
+The package has ESM, CommonJS and UMD builds. In a `<script>` tag, the UMD build
+sets the global `parseNestedFormData`.
 
 ## Issues
 
@@ -416,14 +429,14 @@ and see [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up the project._
 
 ### 🐛 Bugs
 
-Please file an issue for bugs, missing documentation, or unexpected behavior.
+Please open an issue for bugs, missing documentation or unexpected behavior.
 
 [**See Bugs**][bugs]
 
 ### 💡 Feature Requests
 
-Please file an issue to suggest new features. Vote on feature requests by adding
-a 👍. This helps maintainers prioritize what to work on.
+Please open an issue to suggest new features. Vote on feature requests with a
+👍. This helps maintainers decide what to work on.
 
 [**See Feature Requests**][requests]
 
@@ -457,8 +470,6 @@ Special thanks to Kent C. Dodds and his [match-sorter][match-sorter] package
 where most of the setup is from.
 
 <!-- prettier-ignore-start -->
-[npm]: https://www.npmjs.com
-[node]: https://nodejs.org
 [build-badge]: https://img.shields.io/github/actions/workflow/status/milamer/parse-nested-form-data/validate.yml?branch=main&logo=github&style=flat-square
 [build]: https://github.com/milamer/parse-nested-form-data/actions?query=workflow%3Avalidate
 [coverage-badge]: https://img.shields.io/codecov/c/github/milamer/parse-nested-form-data.svg?style=flat-square
