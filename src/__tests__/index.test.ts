@@ -1027,6 +1027,36 @@ describe('Object.prototype names', () => {
     expect(result).toStrictEqual({})
   })
 
+  // A removed entry can go through an empty object or array that a kept entry
+  // set (only possible with such a transform). Undoing the removed entry must
+  // not delete it.
+  it.each<[string, unknown, string, unknown]>([
+    ['a', {}, 'a.toString', {a: {}}],
+    ['a', [], 'a[].toString', {a: []}],
+  ])(
+    'keeps %s with the value %j when %s is removed',
+    (keptPath, keptValue, removedPath, expected) => {
+      const values = new Map([
+        [keptPath, keptValue],
+        [removedPath, 'x'],
+      ])
+      const result = parseFormData(
+        [
+          [keptPath, 'x'],
+          [removedPath, 'x'],
+        ],
+        {
+          transformEntry: ([path]) => ({
+            path,
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
+            value: values.get(path) as string,
+          }),
+        },
+      )
+      expect(result).toStrictEqual(expected)
+    },
+  )
+
   // The same errors as for an unused name, so an error doesn't tell the
   // client which names exist on Object.prototype.
   it.each([
@@ -1102,6 +1132,29 @@ describe('Object.prototype names', () => {
         writable: false,
       })
       expect(parseFormData([['a.patched', '1']])).toStrictEqual({})
+    })
+  })
+
+  // Only object path parts are compared with Object.prototype. `a[]` has no
+  // object key, so its entries stay.
+  describe('an empty-string property added to Object.prototype', () => {
+    const proto: object = Object.prototype
+    afterEach(() => {
+      Reflect.deleteProperty(proto, '')
+    })
+
+    it('keeps the entries of `a[]`', () => {
+      Object.defineProperty(proto, '', {
+        value: 'x',
+        configurable: true,
+        writable: true,
+      })
+      expect(
+        parseFormData([
+          ['a[]', 'x'],
+          ['a[]', 'y'],
+        ]),
+      ).toStrictEqual({a: ['x', 'y']})
     })
   })
 })
