@@ -4,6 +4,7 @@ import {
   DepthLimitError,
   DuplicateKeyError,
   ForbiddenKeyError,
+  InvalidPathError,
   MixedArrayError,
   parseFormData,
 } from '../'
@@ -168,6 +169,32 @@ describe('combinations of basic functions', () => {
 })
 
 describe('complex array', () => {
+  describe('large array indices', () => {
+    it('accepts the largest array index `foo[4294967294] -> {foo: [value]}`', () => {
+      expect(parseFormData([['foo[4294967294]', 'test1']])).toEqual({
+        foo: ['test1'],
+      })
+    })
+    it('squashes huge sparse indices into index order `foo[4294967294], foo[0], foo[2000000000]`', () => {
+      const formData = new FormData()
+      formData.append('foo[4294967294]', 'test1')
+      formData.append('foo[0]', 'test2')
+      formData.append('foo[2000000000]', 'test3')
+      expect(parseFormData(formData)).toEqual({
+        foo: ['test2', 'test3', 'test1'],
+      })
+    })
+    it('orders sparse indices `foo[5], foo[1], foo[3] -> {foo: [value2, value3, value1]}`', () => {
+      const formData = new FormData()
+      formData.append('foo[5]', 'test1')
+      formData.append('foo[1]', 'test2')
+      formData.append('foo[3]', 'test3')
+      expect(parseFormData(formData)).toEqual({
+        foo: ['test2', 'test3', 'test1'],
+      })
+    })
+  })
+
   describe('array order', () => {
     it('will push in order (default 0) `foo[$n] & foo[$n-1] -> { foo: [value2, value1] }', () => {
       const formData = new FormData()
@@ -444,6 +471,36 @@ describe('errors', () => {
   })
 
   it.each([
+    ['foo[4294967295]', 'foo[4294967295]'],
+    ['foo[99999999999999999999]', 'foo[99999999999999999999]'],
+    ['foo[0][4294967295].bar', 'foo[0][4294967295]'],
+    ['+foo.bar[4294967295]', 'foo.bar[4294967295]'],
+    ['foo[b][4294967295]', 'foo[b][4294967295]'],
+  ])(
+    'throws if an array index is too large `%s -> throw InvalidPathError(%s)`',
+    (path, key) => {
+      expect(() => parseFormData([[path, '1']])).toThrow(
+        new InvalidPathError(key),
+      )
+    },
+  )
+  it('checks the index before the type of the existing value `foo.bar, foo[4294967295] -> throw InvalidPathError("foo[4294967295]")`', () => {
+    const formData = new FormData()
+    formData.append('foo.bar', 'test1')
+    formData.append('foo[4294967295]', 'test2')
+    expect(() => parseFormData(formData)).toThrow(
+      new InvalidPathError('foo[4294967295]'),
+    )
+  })
+  it('cuts an InvalidPathError key longer than 100 characters and ends it with ...', () => {
+    const path = `a[${'9'.repeat(200)}]`
+    expect(() => parseFormData([[path, 'x']])).toThrow(
+      `Invalid path at path part ${path.slice(0, 100)}...`,
+    )
+    expect(new InvalidPathError(path).key).toBe(`${path.slice(0, 100)}...`)
+  })
+
+  it.each([
     {
       name: 'DuplicateKeyError',
       ErrorClass: DuplicateKeyError,
@@ -473,6 +530,12 @@ describe('errors', () => {
       ErrorClass: DepthLimitError,
       entries: [['a.b', '1']],
       depth: 1,
+    },
+    {
+      name: 'InvalidPathError',
+      ErrorClass: InvalidPathError,
+      entries: [['a[4294967295]', '1']],
+      depth: Infinity,
     },
   ] satisfies Array<{
     name: string

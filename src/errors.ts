@@ -129,3 +129,26 @@ export class DepthLimitError extends Error {
     this.key = key
   }
 }
+/**
+ * Thrown when an array index in a path is larger than `4294967294`, the
+ * largest index a JavaScript array can hold.
+ * `key` is the path up to that array part, cut to 100 characters plus `...`
+ * when it's longer.
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('a[4294967295]', 'b')
+ * parseFormData(formData)
+ * // throws InvalidPathError('a[4294967295]')
+ * ```
+ */
+export class InvalidPathError extends Error {
+  key: string
+  constructor(key: string) {
+    key = shortKey(key)
+    super(`Invalid path at path part ${key}`)
+    this.name = 'InvalidPathError'
+    this.key = key
+  }
+}

@@ -2,17 +2,27 @@ import {
   DepthLimitError,
   DuplicateKeyError,
   ForbiddenKeyError,
+  InvalidPathError,
   MixedArrayError,
 } from './errors'
 import {extractPathParts, type PathPart} from './path-parts'
 import {defaultTransform, type DefaultTransform} from './transform'
 import type {JsonArray, JsonLeafValue, JsonObject, JsonValue} from './types'
 
-export {DepthLimitError, DuplicateKeyError, ForbiddenKeyError, MixedArrayError}
+export {
+  DepthLimitError,
+  DuplicateKeyError,
+  ForbiddenKeyError,
+  InvalidPathError,
+  MixedArrayError,
+}
 
 // Rejected even when a runtime doesn't define them on `Object.prototype`
 // (e.g. `node --disable-proto=delete`).
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+// The largest valid array index (2 ** 32 - 2).
+const MAX_ARRAY_INDEX = 4_294_967_294
 
 // Any property on `Object.prototype` at parse time, including ones added by a
 // newer runtime or by other code.
@@ -171,11 +181,16 @@ function handlePathPart(
       key,
     ]
   }
+  const isOrdered = pathPart.path !== ''
+  // `path` only contains digits here, so `Number` never returns NaN. Indices
+  // too large to be safe integers are above the limit as well.
+  if (isOrdered && Number(pathPart.path) > MAX_ARRAY_INDEX) {
+    throw new InvalidPathError(pathPart.pathToPart)
+  }
   if (!Array.isArray(currentPathObject)) {
     throw new DuplicateKeyError(pathPart.pathToPart)
   }
   const currentArray = currentPathObject
-  const isOrdered = pathPart.path !== ''
 
   const isOrderedArray = arraysWithOrder.has(currentArray)
   if (isOrdered) {
@@ -308,6 +323,8 @@ function handlePathPart(
  * @throws `ForbiddenKeyError` if an object path part is `__proto__`,
  * `constructor` or `prototype`
  * - e.g. `__proto__.polluted`
+ * @throws `InvalidPathError` if an array index is larger than `4294967294`
+ * - e.g. `a[4294967295]`
  *
  * Every error's `key` is the path after `transformEntry`, not the field name
  * (e.g. `+a.b.c` with `depth: 2` => `DepthLimitError('a.b.c')`).
@@ -406,9 +423,12 @@ export function parseFormData(
   }
 
   for (const orderedArray of Array.from(arraysWithOrder)) {
-    // replace array with a squashed array
-    // array.flat(0) will remove all empty slots (e.g. [0, , 1] => [0, 1])
-    orderedArray.splice(0, orderedArray.length, ...orderedArray.flat(0))
+    // Squash the sparse array in place (e.g. [0, , 1] => [0, 1]).
+    // `Object.values` only visits slots that are set, in ascending index
+    // order, so the cost depends on the number of entries, not on `length`.
+    const values = Object.values(orderedArray)
+    orderedArray.length = 0
+    for (const value of values) orderedArray.push(value)
   }
 
   return result

@@ -7,6 +7,6 @@
   {
     "name": "umd.min",
     "path": "dist/parse-nested-form-data.umd.min.js",
-    "limit": "1.5 kB"
+    "limit": "1.6 kB"
   }
 ]

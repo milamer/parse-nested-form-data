@@ -4,6 +4,7 @@ import {
   DepthLimitError,
   DuplicateKeyError,
   ForbiddenKeyError,
+  InvalidPathError,
   MixedArrayError,
   parseFormData,
 } from '../'
@@ -88,6 +89,8 @@ const pathTokenArb = fc.constantFrom(
   '0',
   '1',
   '9',
+  // Just above the largest array index.
+  '4294967295',
   'a',
   'b',
 )
@@ -98,9 +101,6 @@ const prefixArb = fc.constantFrom('', '+', '&', '-')
 const anyPathArb = fc
   .tuple(prefixArb, fc.oneof(tokenPathArb, fc.string()))
   .map(([prefix, path]) => prefix + path)
-  // Large array indices take seconds to parse (see the expected failure at
-  // the bottom of this file). Keep indices small so the suite stays fast.
-  .filter(path => !/\d{4}/.test(path))
 // Paths built from whole path parts, so they often have more parts than the
 // depth limit. `toString` is removed from the result, `__proto__` throws and a
 // root array part (`[0]a`) can't be built.
@@ -135,6 +135,7 @@ const LIBRARY_ERRORS = [
   MixedArrayError,
   ForbiddenKeyError,
   DepthLimitError,
+  InvalidPathError,
 ]
 
 function thrownBy(fn: () => unknown): unknown {
@@ -343,8 +344,6 @@ describe('properties', () => {
     )
   })
 
-  // Inputs here are small (at most 6 entries, indices below 1000). Large
-  // inputs crash with a RangeError, which is covered in `known bugs`.
   it('only throws the library errors', () => {
     fc.assert(
       fc.property(entriesArb(anyPathArb), entries => {
@@ -355,20 +354,18 @@ describe('properties', () => {
       }),
     )
   })
-})
 
-// Known bugs. Each fix turns its `it.fails` into `it`. The inputs are fixed,
-// so these fail on every run instead of depending on the random seed.
-describe('known bugs', () => {
-  it.fails('parses a single large array index quickly', () => {
-    // Takes ~650 ms today. A larger index would take minutes, and the test
-    // can't time out because the parse is synchronous.
+  it('parses large array indices quickly', () => {
+    // The smaller index goes first: the parse is synchronous, so a slow
+    // `a[4294967294]` would hang instead of timing out.
     const start = performance.now()
     expect(parseFormData([['a[10000000]', '1']])).toStrictEqual({a: ['1']})
     expect(performance.now() - start).toBeLessThan(100)
+    expect(parseFormData([['a[4294967294]', '1']])).toStrictEqual({a: ['1']})
+    expect(performance.now() - start).toBeLessThan(100)
   })
 
-  it.fails('parses 200 000 ordered array entries', () => {
+  it('parses 200 000 ordered array entries', () => {
     const entries = Array.from({length: 200_000}, (_, idx): Entry => [
       `a[${idx}]`,
       String(idx),

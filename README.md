@@ -179,6 +179,9 @@ parseFormData(formData)
 
 One array can't use both `[]` and `[0]`. That throws a `MixedArrayError`.
 
+The largest position is `4294967294`, the largest index a JavaScript array can
+hold. A larger number throws an `InvalidPathError`.
+
 Arrays can hold objects and other arrays:
 
 ```ts
@@ -341,6 +344,7 @@ import {
   DepthLimitError,
   DuplicateKeyError,
   ForbiddenKeyError,
+  InvalidPathError,
   MixedArrayError,
 } from 'parse-nested-form-data'
 ```
@@ -351,12 +355,14 @@ import {
 | `MixedArrayError`   | One array uses both `[]` and `[0]`.                                      | `a[]` and `a[0]`                         |
 | `ForbiddenKeyError` | A path part is `__proto__`, `constructor` or `prototype`.                | `__proto__.x`; `a[constructor]`          |
 | `DepthLimitError`   | A path has more path parts than the `depth` option allows.               | `a.b.c` with `depth: 2`                  |
+| `InvalidPathError`  | An array position is larger than `4294967294`.                           | `a[4294967295]`                          |
 | `TypeError`         | The `depth` option isn't a positive integer or `Infinity`.               | `depth: 0`                               |
 
 Each library error has a `key` property. It's the path up to the path part that
 caused the error. For example, `a.b` = `y` and then `a.b[0]` = `x` throw
-`DuplicateKeyError('a.b')`. In `ForbiddenKeyError` and `DepthLimitError`, a
-`key` longer than 100 characters is cut to 100 characters plus `...`.
+`DuplicateKeyError('a.b')`. In `ForbiddenKeyError`, `DepthLimitError` and
+`InvalidPathError`, a `key` longer than 100 characters is cut to 100 characters
+plus `...`.
 
 `key` is the path after `transformEntry`, not the field name. So it doesn't have
 the `+`, `&` or `-`: `+a.b.c` with `depth: 2` throws `DepthLimitError('a.b.c')`.

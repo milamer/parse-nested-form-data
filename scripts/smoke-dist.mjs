@@ -21,6 +21,7 @@ const expectedExports = [
   'DepthLimitError',
   'DuplicateKeyError',
   'ForbiddenKeyError',
+  'InvalidPathError',
   'MixedArrayError',
   'parseFormData',
 ]
