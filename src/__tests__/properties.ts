@@ -262,15 +262,21 @@ function isContainer(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-// The shortest start of `path` with its first `depth + 1` path parts.
+// The start of `path` up to the end of its part `depth + 1`. Different starts
+// can have the same parts (`a.[` and `a.[[]` both have `a`, `[`), so the end
+// is where a marker part `ǁ` inserted into the path becomes the next part:
+// `a.[[].ǁ.` has `a`, `[`, `ǁ`, but the `[` in `a.[.ǁ.[]` takes in the
+// marker. Of the ends where it does (`a.b` and `a.b.` in `a.b.c`), the part
+// ends at the first.
 function keyAt(path: string, depth: number): string {
-  const expected = JSON.stringify(partsOf(path).slice(0, depth + 1))
-  for (let end = 0; end < path.length; end++) {
-    if (JSON.stringify(partsOf(path.slice(0, end))) === expected) {
+  const expected = JSON.stringify([...partsOf(path).slice(0, depth + 1), '.ǁ'])
+  for (let end = 0; end <= path.length; end++) {
+    const marked = `${path.slice(0, end)}.ǁ.${path.slice(end)}`
+    if (JSON.stringify(partsOf(marked).slice(0, depth + 2)) === expected) {
       return path.slice(0, end)
     }
   }
-  return path
+  throw new Error(`no end for part ${depth + 1} of ${path}`)
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {
