@@ -1,4 +1,6 @@
 // The errors `parseFormData` throws. All of them are exported from the package.
+// Each class sets `name` as a string literal: minifiers rename the classes, so
+// `this.constructor.name` would be `e` or `t` in the minified build.
 
 /**
  * Thrown when a path is used multiple times or has mismatching path parts.
@@ -35,6 +37,7 @@ export class DuplicateKeyError extends Error {
   key: string
   constructor(key: string) {
     super(`Duplicate key at path part ${key}`)
+    this.name = 'DuplicateKeyError'
     this.key = key
   }
 }
@@ -64,6 +67,7 @@ export class MixedArrayError extends Error {
   key: string
   constructor(key: string) {
     super(`Mixed array at path part ${key}`)
+    this.name = 'MixedArrayError'
     this.key = key
   }
 }
@@ -96,6 +100,7 @@ export class ForbiddenKeyError extends Error {
   constructor(key: string) {
     key = shortKey(key)
     super(`Forbidden key at path part ${key}`)
+    this.name = 'ForbiddenKeyError'
     this.key = key
   }
 }
@@ -120,6 +125,7 @@ export class DepthLimitError extends Error {
   constructor(key: string) {
     key = shortKey(key)
     super(`Depth limit exceeded at path part ${key}`)
+    this.name = 'DepthLimitError'
     this.key = key
   }
 }

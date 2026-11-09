@@ -79,6 +79,16 @@ for (const [name, mod] of results) {
     expected,
     `${name}: parse`,
   )
+  // Minifiers rename classes, so `name` must survive in every build.
+  for (const errorName of expectedExports.filter(e => e.endsWith('Error'))) {
+    const error = new mod[errorName]('k')
+    assert.equal(error.name, errorName, `${name}: ${errorName} name`)
+    assert.match(
+      String(error),
+      new RegExp(`^${errorName}: `),
+      `${name}: ${errorName} toString`,
+    )
+  }
   assert.doesNotMatch(
     readFileSync(new URL(`../${files[name]}`, import.meta.url), 'utf8'),
     loadsRemixFile,

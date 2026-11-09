@@ -442,7 +442,64 @@ describe('errors', () => {
     formData.append('foo[]', 'test2')
     expect(() => parseFormData(formData)).toThrow(new MixedArrayError('foo[]'))
   })
+
+  it.each([
+    {
+      name: 'DuplicateKeyError',
+      ErrorClass: DuplicateKeyError,
+      entries: [
+        ['a', '1'],
+        ['a', '2'],
+      ],
+      depth: Infinity,
+    },
+    {
+      name: 'MixedArrayError',
+      ErrorClass: MixedArrayError,
+      entries: [
+        ['a[]', '1'],
+        ['a[0]', '2'],
+      ],
+      depth: Infinity,
+    },
+    {
+      name: 'ForbiddenKeyError',
+      ErrorClass: ForbiddenKeyError,
+      entries: [['__proto__.x', '1']],
+      depth: Infinity,
+    },
+    {
+      name: 'DepthLimitError',
+      ErrorClass: DepthLimitError,
+      entries: [['a.b', '1']],
+      depth: 1,
+    },
+  ] satisfies Array<{
+    name: string
+    ErrorClass: new (key: string) => Error
+    entries: Array<[string, string]>
+    depth: number
+  }>)('sets the name of $name', ({name, ErrorClass, entries, depth}) => {
+    const error = errorThrownBy(() => parseFormData(entries, {depth}))
+    expect(error).toBeInstanceOf(ErrorClass)
+    expect(error).toBeInstanceOf(Error)
+    expect(error.name).toBe(name)
+    expect(String(error)).toBe(`${name}: ${error.message}`)
+    expect(error.stack).toMatch(new RegExp(`^${name}: `))
+    expect(new ErrorClass('k').name).toBe(name)
+  })
 })
+
+// The error `fn` throws. Anything else comes back as a plain `Error`, which
+// fails the `instanceof` check of the error class.
+function errorThrownBy(fn: () => unknown): Error {
+  try {
+    fn()
+  } catch (error) {
+    return error instanceof Error ? error : new Error('threw a non-Error')
+  }
+  return new Error('did not throw')
+}
 
 describe('complex examples', () => {
   it('can mix array types `foo[$n].foo, -foo[$n].bar, &foo[$n+1] -> {foo: [{foo: value1, bar: null}, Boolean(Number($value3))]}`', () => {
