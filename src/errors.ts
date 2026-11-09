@@ -68,10 +68,20 @@ export class MixedArrayError extends Error {
   }
 }
 /**
+ * Cuts a path to 100 characters plus `...`, so a huge path from a client
+ * doesn't end up in full in logs or error responses.
+ */
+function shortKey(key: string): string {
+  return key.length > 100 ? `${key.slice(0, 100)}...` : key
+}
+
+/**
  * Thrown when an object path part is `__proto__`, `constructor` or
  * `prototype`, which could modify `Object.prototype`. The names are rejected
  * at any position in the path. Entries with other names on `Object.prototype`
  * (`toString`, ...) are removed instead (see `parseFormData`).
+ * `key` is the path up to the forbidden part, cut to 100 characters plus `...`
+ * when it's longer.
  *
  * @example
  * ```ts
@@ -84,14 +94,16 @@ export class MixedArrayError extends Error {
 export class ForbiddenKeyError extends Error {
   key: string
   constructor(key: string) {
+    key = shortKey(key)
     super(`Forbidden key at path part ${key}`)
     this.key = key
   }
 }
 /**
  * Thrown when a path has more path parts than the `depth` option allows.
- * `key` is the path up to the first path part over the limit.
- * The depth is checked first, so a path that's too deep throws
+ * `key` is the path up to the first path part over the limit, cut to
+ * 100 characters plus `...` when it's longer.
+ * Within one entry the depth is checked first, so a path that's too deep throws
  * `DepthLimitError` even if it would also throw another error, like a
  * `ForbiddenKeyError` for `__proto__`.
  *
@@ -106,6 +118,7 @@ export class ForbiddenKeyError extends Error {
 export class DepthLimitError extends Error {
   key: string
   constructor(key: string) {
+    key = shortKey(key)
     super(`Depth limit exceeded at path part ${key}`)
     this.key = key
   }

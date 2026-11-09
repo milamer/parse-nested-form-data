@@ -328,6 +328,21 @@ describe('depth option', () => {
     expect(error.message).toBe('Depth limit exceeded at path part a.b')
   })
 
+  it('cuts a key longer than 100 characters and ends it with ...', () => {
+    const path = `a.${'b'.repeat(200)}`
+    expect(() => parseFormData([[path, 'x']], {depth: 1})).toThrow(
+      `Depth limit exceeded at path part ${path.slice(0, 100)}...`,
+    )
+    expect(new DepthLimitError(path).key).toBe(`${path.slice(0, 100)}...`)
+    expect(new DepthLimitError('b'.repeat(100)).key).toBe('b'.repeat(100))
+  })
+
+  it('removes an empty string with removeEmptyString before checking the depth', () => {
+    expect(
+      parseFormData([['a.b.c', '']], {depth: 2, removeEmptyString: true}),
+    ).toStrictEqual({})
+  })
+
   it.each([0, -1, 1.5, Number.NaN, -Infinity])(
     'throws a TypeError for depth %d, even without entries',
     depth => {
@@ -757,6 +772,13 @@ describe('prototype pollution protection', () => {
       expect(Reflect.get(proto, 'polluted')).toBeUndefined()
     },
   )
+  it('cuts a key longer than 100 characters and ends it with ...', () => {
+    const path = `${'a'.repeat(200)}.__proto__`
+    expect(() => parseFormData([[path, 'x']])).toThrow(
+      `Forbidden key at path part ${path.slice(0, 100)}...`,
+    )
+    expect(new ForbiddenKeyError(path).key).toBe(`${path.slice(0, 100)}...`)
+  })
 })
 
 // Parses `key` with that property removed from Object.prototype and returns

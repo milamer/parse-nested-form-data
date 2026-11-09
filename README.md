@@ -263,7 +263,7 @@ Paths with misplaced brackets are parsed without an error:
 `__proto__`, `constructor` and `prototype` can't be used as an object path part,
 at any position, with or without brackets, because they could modify
 `Object.prototype`. `parseFormData` throws a `ForbiddenKeyError` with the path
-up to that part:
+up to that part, cut to 100 characters plus `...` when it's longer:
 
 ```ts
 const formData = new FormData()
@@ -365,10 +365,14 @@ _Default: `Infinity`_
 
 The maximum number of path parts in a path. Every part counts, so `a.b[0]` and
 `a[b][]` both have 3. A path with more parts throws a `DepthLimitError` with the
-path up to the first part over the limit. The depth is checked first, so a path
-that's too deep throws `DepthLimitError` even if it would also throw another
-error, like a `ForbiddenKeyError` for `__proto__`. Must be a positive integer or
-`Infinity`, otherwise `parseFormData` throws a `TypeError`.
+path up to the first part over the limit, cut to 100 characters plus `...` when
+it's longer. Within one entry the depth is checked first, so a path that's too
+deep throws `DepthLimitError` even if it would also throw another error, like a
+`ForbiddenKeyError` for `__proto__`. Entries are parsed in order, so an earlier
+entry's error wins. The depth is checked after `transformEntry`, and with
+`removeEmptyString` an entry with an empty string is removed before its depth is
+checked, so it never throws. Must be a positive integer or `Infinity`, otherwise
+`parseFormData` throws a `TypeError`.
 
 The parser itself handles any depth, but a field like `a.a.a…` with thousands of
 parts creates an object that crashes code walking it recursively
