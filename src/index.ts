@@ -1,98 +1,14 @@
-/**
- * @name parse-nested-form-data
- * @license MIT license.
- * @copyright (c) 2022 Christian Schurr
- * @author Christian Schurr <chris@schurr.dev>
- */
+import {
+  DepthLimitError,
+  DuplicateKeyError,
+  ForbiddenKeyError,
+  MixedArrayError,
+} from './errors'
+import {extractPathParts, type PathPart} from './path-parts'
+import {defaultTransform, type DefaultTransform} from './transform'
+import type {JsonArray, JsonLeafValue, JsonObject, JsonValue} from './types'
 
-/**
- * Thrown when a path is used multiple times or has mismatching path parts.
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('a[0]', 'b')
- * formData.append('a[0]', 'c')
- * parseFormData(formData)
- * // throws DuplicateKeyError('a[0]')
- * ```
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('a', 'b')
- * formData.append('a', 'c')
- * parseFormData(formData)
- * // throws DuplicateKeyError('a')
- * ```
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('a', 'b')
- * formData.append('a[]', 'c')
- * parseFormData(formData)
- * // throws DuplicateKeyError('a[]')
- * ```
- *
- */
-export class DuplicateKeyError extends Error {
-  key: string
-  constructor(key: string) {
-    super(`Duplicate key at path part ${key}`)
-    this.key = key
-  }
-}
-/**
- * Thrown when an array is used at the same path with an order parameter and
- * without an order parameter.
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('a[0]', 'a')
- * formData.append('a[]', 'b')
- * parseFormData(formData)
- * // => throws `MixedArrayError(a[])`
- * ```
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('a[]', 'a')
- * formData.append('a[0]', 'b')
- * parseFormData(formData)
- * // => throws `MixedArrayError(a[0])`
- * ```
- */
-export class MixedArrayError extends Error {
-  key: string
-  constructor(key: string) {
-    super(`Mixed array at path part ${key}`)
-    this.key = key
-  }
-}
-/**
- * Thrown when an object path part is `__proto__`, `constructor` or
- * `prototype`, which could modify `Object.prototype`. The names are rejected
- * at any position in the path. Entries with other names on `Object.prototype`
- * (`toString`, ...) are removed instead (see `parseFormData`).
- *
- * @example
- * ```ts
- * const formData = new FormData()
- * formData.append('__proto__.polluted', 'yes')
- * parseFormData(formData)
- * // throws ForbiddenKeyError('__proto__')
- * ```
- */
-export class ForbiddenKeyError extends Error {
-  key: string
-  constructor(key: string) {
-    super(`Forbidden key at path part ${key}`)
-    this.key = key
-  }
-}
+export {DepthLimitError, DuplicateKeyError, ForbiddenKeyError, MixedArrayError}
 
 // Rejected even when a runtime doesn't define them on `Object.prototype`
 // (e.g. `node --disable-proto=delete`).
@@ -103,18 +19,6 @@ const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 function isPrototypeKey(key: string): boolean {
   return Object.getOwnPropertyDescriptor(Object.prototype, key) !== undefined
 }
-
-type JsonObject = {[Key in string]?: JsonValue}
-type JsonArray = Array<JsonValue>
-type JsonValue =
-  | string
-  | number
-  | JsonObject
-  | JsonArray
-  | boolean
-  | null
-  | File
-type JsonLeafValue = Exclude<JsonValue, JsonArray | JsonObject>
 
 /**
  * Detects `File` and `Blob` values by their `Symbol.toStringTag`, which works
@@ -136,78 +40,24 @@ function isJsonObject(val: JsonValue): val is JsonObject {
 }
 
 /**
- * Default Transformer for `parseFormData`.
- *
- * Transforms a FormData Entry into a path and a `JsonLeafValue`.
- *
- * - `path` starts with `+` -> transform value to `number`
- * - `path` starts with `&` -> transform value to `boolean`
- * - `path` starts with `-` -> transform value to `null`
- *
- * @example
- * ```ts
- * const entry = ['a[0]', 'b']
- * const result = defaultTransform(entry)
- * // => {path: 'a[0]', value: 'b'}
- * ```
- *
- * @example
- * ```ts
- * const entry = ['+a[0]', '1']
- * const result = defaultTransform(entry)
- * // => {path: 'a[0]', value: 1}
- * ```
- *
- * @example
- * ```ts
- * const entry = ['&a[0]', 'true']
- * const result = defaultTransform(entry)
- * // => {path: 'a[0]', value: true}
- * ```
- *
- * @example
- * ```ts
- * const entry = ['-a[0]', 'null']
- * const result = defaultTransform(entry)
- * // => {path: 'a[0]', value: null}
- * ```
- *
- * @example
- * ```ts
- * const entry = ['a[0]', new File([''], 'file.txt')]
- * const result = defaultTransform(entry)
- * // => {path: 'a[0]', value: File}
- * ```
- *
- *
- * @param entry [path, value]: the FormData entry
- * @returns the path and the transformed value
- */
-function defaultTransform(entry: [path: string, value: string | File]): {
-  path: string
-  value: JsonLeafValue
-} {
-  let path = entry[0]
-  let value: JsonLeafValue = entry[1]
-  if (path.startsWith('+')) {
-    path = path.slice(1)
-    value = Number(value)
-  } else if (path.startsWith('&')) {
-    path = path.slice(1)
-    value = value === 'on' || value === 'true' || Boolean(Number(value))
-  } else if (path.startsWith('-')) {
-    path = path.slice(1)
-    value = null
-  }
-  return {path, value}
-}
-
-type DefaultTransform = typeof defaultTransform
-/**
  * Options to change the behavior of `parseFormData`.
  * @param transformEntry - a function to transform the FormData entry into a path and a value
  * (default: `defaultTransform`)
  * @param removeEmptyString - skip empty values '' (default: `false`)
+ * @param depth - the maximum number of path parts in a path, counting every
+ * part (`a.b[0]` has 3); a positive integer or `Infinity` (default: `Infinity`).
+ * For untrusted input, `32` is recommended; 2.0 will lower the default.
+ *
+ * @example
+ * ```ts
+ * const formData = new FormData()
+ * formData.append('a.b', 'x')
+ * parseFormData(formData, {depth: 2})
+ * // => {a: {b: 'x'}}
+ * formData.append('a.c.d', 'y')
+ * parseFormData(formData, {depth: 2})
+ * // throws DepthLimitError('a.c.d')
+ * ```
  *
  * @example
  * ```ts
@@ -237,121 +87,11 @@ type DefaultTransform = typeof defaultTransform
  */
 export type ParseFormDataOptions = {
   removeEmptyString?: boolean
+  depth?: number
   transformEntry?: (
     entry: [path: string, value: string | File],
     defaultTransform: DefaultTransform,
   ) => {path: string; value: JsonLeafValue}
-}
-
-/**
- * A parsed part of a FormData path. It consists of four parts:
- * @param path - the key to access the value in the intermediate result
- * @param type - the type of the path part (array - e.g. [\d*], or object .e.g. .key or [key])
- * @param default - the default value of the next path part ([] for array, {} for object)
- * @param pathToPart - the full path to the current path part
- *
- * @example
- * ```ts
- * const path = 'a[0].b'
- * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
- * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[0]'},
- * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a[0].b'}]
- * ```
- */
-type PathPart = {
-  path: string
-  type: 'object' | 'array'
-  default: JsonObject | JsonArray
-  pathToPart: string
-}
-/**
- *
- * Transforms a FormData path into an array of `PathPart`s.
- *
- * @param path - the path to extract the path parts from
- * @returns {Array<PathPart>} the extracted path parts
- *
- * @example
- * ```ts
- * const path = 'a[0].b'
- * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
- * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[0]'},
- * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a[0].b'}]
- * ```
- *
- * @example
- * ```ts
- * const path = 'a.b'
- * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object', default: {}, pathToPart: 'a'},
- * //     {path: 'b', type: 'object', default: {}, pathToPart: 'a.b'}]
- * ```
- *
- * @example
- * ```ts
- * const path = 'a[b][0]'
- * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object', default: {}, pathToPart: 'a'},
- * //     {path: 'b', type: 'object', default: [], pathToPart: 'a[b]'},
- * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[b][0]'}]
- * ```
- *
- * @example
- * ```ts
- * const path = 'a[][0]'
- * const result = extractPathParts(path)
- * // => [{path: 'a', type: 'object', default: [], pathToPart: 'a'},
- * //     {path: '', type: 'array', default: [], pathToPart: 'a[]'},
- * //     {path: '0', type: 'array', default: {}, pathToPart: 'a[][0]'}]
- * ```
- *
- *
- */
-function extractPathParts(path: string): Array<PathPart> {
-  // Where the bracket part of each `[` ends. Brackets nest like in qs
-  // (`a[b[c]]`: the last `]` closes the first `[`).
-  const closeOf = new Map<number, number>()
-  const open: Array<number> = []
-  for (let idx = 0; idx < path.length; idx++) {
-    if (path[idx] === '[') open.push(idx)
-    else if (path[idx] === ']' && open.length > 0) closeOf.set(open.pop()!, idx)
-  }
-  const lastClose = path.lastIndexOf(']')
-
-  const parts: Array<PathPart> = []
-  const addPart = (key: string, type: PathPart['type'], end: number): void => {
-    // Empty keys come from `a..b`, `a.`, `.a` or a `.` or `[` after `]`.
-    if (key === '' && type === 'object') return
-    parts.push({path: key, type, default: {}, pathToPart: path.slice(0, end)})
-  }
-
-  let start = 0
-  for (let idx = 0; idx < path.length; idx++) {
-    // A `[` that no `]` closes ends at the last `]` (`a[[0]` => key `[0`).
-    // Without a `]` after it, it's part of the key (`a[0` => key `a[0`), like
-    // a `]` that closes no `[` (`a]b` => key `a]b`, `a[b]]` => key `]` in `b`).
-    const close = path[idx] === '[' ? (closeOf.get(idx) ?? lastClose) : -1
-    if (path[idx] !== '.' && close < idx) continue
-
-    addPart(path.slice(start, idx), 'object', idx)
-    if (close > idx) {
-      // Digits or nothing is an array index, anything else is the key as it
-      // is (`a[b.c]` => key `b.c`).
-      const key = path.slice(idx + 1, close)
-      addPart(key, /^\d*$/.test(key) ? 'array' : 'object', close + 1)
-      idx = close
-    }
-    start = idx + 1
-  }
-  addPart(path.slice(start), 'object', path.length)
-
-  // A part holds an array if the next part is an array index.
-  parts.forEach((part, idx) => {
-    if (parts[idx + 1]?.type === 'array') part.default = []
-  })
-  return parts
 }
 
 /**
@@ -547,7 +287,12 @@ function handlePathPart(
  * - `transformEntry` - a function to transform the path and the value before
  *    inserting the value at the path in the resulting object (default: `defaultTransform`)
  * - `removeEmptyString` - if `true` removes all entries where the value is an empty string
+ * - `depth` - the maximum number of path parts in a path, counting every part
+ *   (default: `Infinity`)
  * @returns {JsonObject} the parsed JSON object
+ * @throws `TypeError` if `depth` isn't a positive integer or `Infinity`
+ * @throws `DepthLimitError` if a path has more path parts than `depth`
+ * - e.g. `a.b[0]` with `depth: 2` => `DepthLimitError('a.b[0]')`
  * @throws `DuplicateKeyError` if
  * - two entries set a value at the same path
  *   - e.g. `a` and `a`, `a[0]` and `a[0]`, `a.b` and `a[b]`
@@ -577,8 +322,14 @@ export function parseFormData(
   {
     removeEmptyString = false,
     transformEntry = defaultTransform,
+    depth = Infinity,
   }: ParseFormDataOptions = {},
 ): JsonObject {
+  if (depth !== Infinity && !(Number.isInteger(depth) && depth > 0)) {
+    throw new TypeError(
+      `depth must be a positive integer or Infinity, got ${String(depth)}`,
+    )
+  }
   const result: JsonObject = {}
 
   // all arrays we need to squash (in place) later
@@ -599,7 +350,7 @@ export function parseFormData(
     if (removeEmptyString && entry[1] === '') continue
 
     const {path, value} = transformEntry(entry, defaultTransform)
-    const pathParts = extractPathParts(path)
+    const pathParts = extractPathParts(path, depth)
     // Removed entries are still built like any other entry, so they cause the
     // same errors as an unused name, and undone below.
     const isRemoved = pathParts.some(

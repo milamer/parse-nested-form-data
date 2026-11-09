@@ -1,11 +1,14 @@
 import * as fc from 'fast-check'
 import {describe, expect, it} from 'vitest'
 import {
+  DepthLimitError,
   DuplicateKeyError,
   ForbiddenKeyError,
   MixedArrayError,
   parseFormData,
 } from '../'
+import {extractPathParts} from '../path-parts'
+import {defaultTransform} from '../transform'
 import {outcomeWithName} from './utils'
 
 type Entry = [string, string]
@@ -98,12 +101,41 @@ const anyPathArb = fc
   // Large array indices take seconds to parse (see the expected failure at
   // the bottom of this file). Keep indices small so the suite stays fast.
   .filter(path => !/\d{4}/.test(path))
+// Paths built from whole path parts, so they often have more parts than the
+// depth limit. `toString` is removed from the result, `__proto__` throws and a
+// root array part (`[0]a`) can't be built.
+const partsPathArb = fc
+  .tuple(
+    prefixArb,
+    fc.array(
+      fc.constantFrom(
+        'a',
+        '.b',
+        '[c]',
+        '[0]',
+        '[1]',
+        '[]',
+        '.toString',
+        '[__proto__]',
+        '.',
+        '[',
+        ']',
+      ),
+      {maxLength: 8},
+    ),
+  )
+  .map(([prefix, parts]) => prefix + parts.join(''))
 const entriesArb = (
   pathArb: fc.Arbitrary<string>,
 ): fc.Arbitrary<Array<Entry>> =>
   fc.array(fc.tuple(pathArb, fc.string()), {maxLength: 6})
 
-const LIBRARY_ERRORS = [DuplicateKeyError, MixedArrayError, ForbiddenKeyError]
+const LIBRARY_ERRORS = [
+  DuplicateKeyError,
+  MixedArrayError,
+  ForbiddenKeyError,
+  DepthLimitError,
+]
 
 function thrownBy(fn: () => unknown): unknown {
   try {
@@ -160,6 +192,37 @@ function outcomeWithoutName(entries: Array<Entry>): unknown {
   return {
     result: renameKeys(withoutKey(outcome.result, 'zz'), 'zz', 'toString'),
   }
+}
+
+// The outcome of a parse: the result, or the class and message of the error.
+type Outcome = {result: unknown} | {error: unknown; message: string}
+function outcomeOf(parse: () => unknown): Outcome {
+  try {
+    return {result: parse()}
+  } catch (error) {
+    const type = error instanceof Error ? error.constructor : error
+    return {error: type, message: String(error)}
+  }
+}
+
+// What `entries` should give with `depth`, worked out without using the limit.
+// Entries are read one by one, in order. Every entry before the first one with
+// more than `depth` path parts gives the same result as with no limit, and that
+// includes any error they throw. If none of them throws, the first entry with
+// too many parts throws `DepthLimitError` with the path up to the end of the
+// first part over the limit.
+function expectedWithDepth(entries: Array<Entry>, depth: number): Outcome {
+  const partsPerEntry = entries.map(entry =>
+    extractPathParts(defaultTransform(entry).path),
+  )
+  const tooDeep = partsPerEntry.findIndex(parts => parts.length > depth)
+  if (tooDeep === -1) return outcomeOf(() => parseFormData(entries))
+  const before = outcomeOf(() => parseFormData(entries.slice(0, tooDeep)))
+  if ('error' in before) return before
+  const firstOverLimit = partsPerEntry[tooDeep]![depth]!
+  return outcomeOf(() => {
+    throw new DepthLimitError(firstOverLimit.pathToPart)
+  })
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {
@@ -263,6 +326,20 @@ describe('properties', () => {
           outcomeWithoutName(entries),
         )
       }),
+    )
+  })
+
+  it('limits the nesting to depth or throws DepthLimitError', () => {
+    fc.assert(
+      fc.property(
+        entriesArb(fc.oneof(anyPathArb, partsPathArb)),
+        fc.integer({min: 1, max: 6}),
+        (entries, depth) => {
+          expect(
+            outcomeOf(() => parseFormData(entries, {depth})),
+          ).toStrictEqual(expectedWithDepth(entries, depth))
+        },
+      ),
     )
   })
 

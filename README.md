@@ -44,6 +44,7 @@ object out of the values. You can tell the parser to do not parse empty values.
 - [Advanced usage](#advanced-usage)
   - [Options](#options)
   - [removeEmptyString: `[boolean]`](#removeemptystring-boolean)
+  - [depth: `[number]`](#depth-number)
   - [transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`](#transformentry-entry-path-string-value-string--file-defaulttransform-defaulttransform--path-string-value-jsonleafvalue)
 - [Issues](#issues)
   - [🐛 Bugs](#-bugs)
@@ -262,7 +263,7 @@ Paths with misplaced brackets are parsed without an error:
 `__proto__`, `constructor` and `prototype` can't be used as an object path part,
 at any position, with or without brackets, because they could modify
 `Object.prototype`. `parseFormData` throws a `ForbiddenKeyError` with the path
-up to that part:
+up to that part, cut to 100 characters plus `...` when it's longer:
 
 ```ts
 const formData = new FormData()
@@ -356,6 +357,38 @@ formData.append('foo[0].baz', '4')
 
 parseFormData(formData, {removeEmptyString: true})
 // {foo: [{foo: 'test3', baz: '4'}, {bar: 'test2'}]}
+```
+
+### depth: `[number]`
+
+_Default: `Infinity`_
+
+The maximum number of path parts in a path. Every part counts, so `a.b[0]` and
+`a[b][]` both have 3. A path with more parts throws a `DepthLimitError` with the
+path up to the first part over the limit, cut to 100 characters plus `...` when
+it's longer. Within one entry the depth is checked first, so a path that's too
+deep throws `DepthLimitError` even if it would also throw another error, like a
+`ForbiddenKeyError` for `__proto__`. Entries are parsed in order, so an earlier
+entry's error wins. The depth is checked after `transformEntry`, and with
+`removeEmptyString` an entry with an empty string is removed before its depth is
+checked, so it never throws. Must be a positive integer or `Infinity`, otherwise
+`parseFormData` throws a `TypeError`.
+
+The parser itself handles any depth, but a field like `a.a.a…` with thousands of
+parts creates an object that crashes code walking it recursively
+(`JSON.stringify`, validators, deep clones). When the input comes from untrusted
+clients, set a limit; `depth: 32` fits nearly every form. Version 2.0 will lower
+the default from `Infinity`.
+
+```ts
+const formData = new FormData()
+formData.append('user.address.street', 'Main St')
+parseFormData(formData, {depth: 3})
+// {user: {address: {street: 'Main St'}}}
+
+formData.append('user.address.geo.lat', '52.5')
+parseFormData(formData, {depth: 3})
+// throws DepthLimitError('user.address.geo.lat')
 ```
 
 ### transformEntry: `(entry: [path: string, value: string | File], defaultTransform: DefaultTransform) => {path: string, value: JsonLeafValue}`
