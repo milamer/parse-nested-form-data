@@ -1,14 +1,27 @@
 {
   "name": "parse-nested-form-data",
   "version": "1.0.0",
-  "description": "A tiny node module for parsing FormData by name into objects and arrays",
+  "description": "Tiny (under 2 kB), dependency-free parser that turns FormData into nested objects and arrays, based on the field names. Works in browsers, Node.js, Deno, Bun and edge runtimes.",
   "keywords": [
     "FormData",
     "array",
     "form",
+    "form-data",
+    "lightweight",
+    "multipart",
     "nested",
+    "nextjs",
+    "no-dependencies",
     "object",
-    "parse"
+    "parse",
+    "parser",
+    "react-router",
+    "remix",
+    "server-actions",
+    "tiny",
+    "typescript",
+    "urlsearchparams",
+    "zero-dependency"
   ],
   "homepage": "https://github.com/milamer/parse-nested-form-data#readme",
   "bugs": {

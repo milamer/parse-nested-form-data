@@ -10,6 +10,7 @@
 [![Build Status][build-badge]][build]
 [![Code Coverage][coverage-badge]][coverage]
 [![version][version-badge]][package]
+[![Size][size-badge]][size]
 [![downloads][downloads-badge]][npmtrends]
 [![MIT License][license-badge]][license]
 [![All Contributors][all-contributors-badge]](#contributors-)
@@ -38,7 +39,8 @@ parseFormData(formData)
 // }
 ```
 
-It has no dependencies and works in all modern JavaScript runtimes (see
+It's under 2 kB (minified and brotli-compressed), has no dependencies and works
+in all modern JavaScript runtimes (see
 [Supported runtimes](#supported-runtimes)).
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
@@ -476,14 +478,16 @@ where most of the setup is from.
 [coverage]: https://codecov.io/github/milamer/parse-nested-form-data
 [version-badge]: https://img.shields.io/npm/v/parse-nested-form-data.svg?style=flat-square
 [package]: https://www.npmjs.com/package/parse-nested-form-data
+[size-badge]: https://img.shields.io/badge/min%2Bbrotli-%3C%202%20kB-brightgreen?style=flat-square
+[size]: https://github.com/milamer/parse-nested-form-data/blob/main/.size-limit.json
 [downloads-badge]: https://img.shields.io/npm/dm/parse-nested-form-data.svg?style=flat-square
 [npmtrends]: https://www.npmtrends.com/parse-nested-form-data
 [license-badge]: https://img.shields.io/npm/l/parse-nested-form-data.svg?style=flat-square
-[license]: https://github.com/milamer/parse-nested-form-data/blob/master/LICENSE
+[license]: https://github.com/milamer/parse-nested-form-data/blob/main/LICENSE
 [prs-badge]: https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square
 [prs]: http://makeapullrequest.com
 [coc-badge]: https://img.shields.io/badge/code%20of-conduct-ff69b4.svg?style=flat-square
-[coc]: https://github.com/milamer/parse-nested-form-data/blob/master/CODE_OF_CONDUCT.md
+[coc]: https://github.com/milamer/parse-nested-form-data/blob/main/CODE_OF_CONDUCT.md
 [emojis]: https://github.com/all-contributors/all-contributors#emoji-key
 [all-contributors]: https://github.com/all-contributors/all-contributors
 [all-contributors-badge]: https://img.shields.io/github/all-contributors/milamer/parse-nested-form-data?color=orange&style=flat-square
