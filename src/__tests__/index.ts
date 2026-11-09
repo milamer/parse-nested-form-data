@@ -318,7 +318,9 @@ describe('depth option', () => {
     'throws a TypeError for depth %d, even without entries',
     depth => {
       expect(() => parseFormData([], {depth})).toThrow(
-        new TypeError('depth must be a positive integer or Infinity'),
+        new TypeError(
+          `depth must be a positive integer or Infinity, got ${depth}`,
+        ),
       )
     },
   )

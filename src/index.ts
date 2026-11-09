@@ -639,7 +639,9 @@ export function parseFormData(
   }: ParseFormDataOptions = {},
 ): JsonObject {
   if (depth !== Infinity && !(Number.isInteger(depth) && depth > 0)) {
-    throw new TypeError('depth must be a positive integer or Infinity')
+    throw new TypeError(
+      `depth must be a positive integer or Infinity, got ${String(depth)}`,
+    )
   }
   const result: JsonObject = {}
 
