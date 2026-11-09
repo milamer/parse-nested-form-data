@@ -91,6 +91,9 @@ export class ForbiddenKeyError extends Error {
 /**
  * Thrown when a path has more path parts than the `depth` option allows.
  * `key` is the path up to the first path part over the limit.
+ * The depth is checked first, so a path that's too deep throws
+ * `DepthLimitError` even if it would also throw another error, like a
+ * `ForbiddenKeyError` for `__proto__`.
  *
  * @example
  * ```ts

@@ -365,7 +365,9 @@ _Default: `Infinity`_
 
 The maximum number of path parts in a path. Every part counts, so `a.b[0]` and
 `a[b][]` both have 3. A path with more parts throws a `DepthLimitError` with the
-path up to the first part over the limit. Must be a positive integer or
+path up to the first part over the limit. The depth is checked first, so a path
+that's too deep throws `DepthLimitError` even if it would also throw another
+error, like a `ForbiddenKeyError` for `__proto__`. Must be a positive integer or
 `Infinity`, otherwise `parseFormData` throws a `TypeError`.
 
 The parser itself handles any depth, but a field like `a.a.a…` with thousands of
