@@ -7,6 +7,8 @@ import {
   MixedArrayError,
   parseFormData,
 } from '../'
+import {extractPathParts} from '../path-parts'
+import {defaultTransform} from '../transform'
 import {outcomeWithName} from './utils'
 
 type Entry = [string, string]
@@ -207,78 +209,20 @@ function outcomeOf(parse: () => unknown): Outcome {
 // Entries are read one by one, in order. Every entry before the first one with
 // more than `depth` path parts gives the same result as with no limit, and that
 // includes any error they throw. If none of them throws, the first entry with
-// too many parts throws `DepthLimitError`. The error shows its path only up to
-// the end of part number `depth + 1`.
+// too many parts throws `DepthLimitError` with the path up to the end of the
+// first part over the limit.
 function expectedWithDepth(entries: Array<Entry>, depth: number): Outcome {
-  const paths = entries.map(entry => transformedPath(entry))
-  const tooDeep = paths.findIndex(path => partsOf(path).length > depth)
+  const partsPerEntry = entries.map(entry =>
+    extractPathParts(defaultTransform(entry).path),
+  )
+  const tooDeep = partsPerEntry.findIndex(parts => parts.length > depth)
   if (tooDeep === -1) return outcomeOf(() => parseFormData(entries))
   const before = outcomeOf(() => parseFormData(entries.slice(0, tooDeep)))
   if ('error' in before) return before
-  const path = paths[tooDeep]!
+  const firstOverLimit = partsPerEntry[tooDeep]![depth]!
   return outcomeOf(() => {
-    throw new DepthLimitError(keyAt(path, depth))
+    throw new DepthLimitError(firstOverLimit.pathToPart)
   })
-}
-
-// The path of `entry` after the default transform (`+a` => `a`).
-function transformedPath(entry: Entry): string {
-  let path = ''
-  parseFormData([entry], {
-    transformEntry: (item, defaultTransform) => {
-      path = defaultTransform(item).path
-      return {path: 'a', value: ''}
-    },
-  })
-  return path
-}
-
-// Names on Object.prototype are removed from the result, and `__proto__`,
-// `constructor` and `prototype` throw. `partsOf` renames them to `ǂ`, which is
-// never generated, so they are built like any other key.
-const UNBUILT_NAME = new RegExp(
-  [...Object.getOwnPropertyNames(Object.prototype), 'prototype'].join('|'),
-)
-
-// The keys of the path parts of `path` (`a.b[0]` => `.a`, `.b`, `[]0`; array
-// indices are squashed). Under the root key `r`, a path that starts with an
-// array index is built too.
-function partsOf(path: string): Array<string> {
-  const built = parseFormData(
-    [[`r.${path.split(UNBUILT_NAME).join('ǂ')}`, 'x']],
-    {
-      transformEntry: ([entryPath, value]) => ({path: entryPath, value}),
-    },
-  )
-  const parts: Array<string> = []
-  let container: unknown = built
-  while (isContainer(container)) {
-    const [key, item] = Object.entries(container)[0]!
-    parts.push(`${Array.isArray(container) ? '[]' : '.'}${key}`)
-    container = item
-  }
-  return parts.slice(1)
-}
-
-function isContainer(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-// The start of `path` up to the end of its part `depth + 1`. Different starts
-// can have the same parts (`a.[` and `a.[[]` both have `a`, `[`), so the end
-// is where a marker part `ǁ` inserted into the path becomes the next part:
-// `a.[[].ǁ.` has `a`, `[`, `ǁ`, but the `[` in `a.[.ǁ.[]` takes in the
-// marker. Of the ends where it does (`a.b` and `a.b.` in `a.b.c`), the part
-// ends at the first.
-function keyAt(path: string, depth: number): string {
-  const expected = JSON.stringify([...partsOf(path).slice(0, depth + 1), '.ǁ'])
-  for (let end = 0; end <= path.length; end++) {
-    const marked = `${path.slice(0, end)}.ǁ.${path.slice(end)}`
-    if (JSON.stringify(partsOf(marked).slice(0, depth + 2)) === expected) {
-      return path.slice(0, end)
-    }
-  }
-  throw new Error(`no end for part ${depth + 1} of ${path}`)
 }
 
 function isNoneOrLibraryError(error: unknown): boolean {
