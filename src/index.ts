@@ -228,7 +228,8 @@ type DefaultTransform = typeof defaultTransform
  * (default: `defaultTransform`)
  * @param removeEmptyString - skip empty values '' (default: `false`)
  * @param depth - the maximum number of path parts in a path, counting every
- * part (`a.b[0]` has 3); a positive integer or `Infinity` (default: `Infinity`)
+ * part (`a.b[0]` has 3); a positive integer or `Infinity` (default: `Infinity`).
+ * For untrusted input, `32` is recommended; 2.0 will lower the default.
  *
  * @example
  * ```ts

@@ -370,8 +370,9 @@ path up to the first part over the limit. Must be a positive integer or
 
 The parser itself handles any depth, but a field like `a.a.a…` with thousands of
 parts creates an object that crashes code walking it recursively
-(`JSON.stringify`, validators, deep clones). Set a limit that fits your forms
-when the input comes from untrusted clients.
+(`JSON.stringify`, validators, deep clones). When the input comes from untrusted
+clients, set a limit; `depth: 32` fits nearly every form. Version 2.0 will lower
+the default from `Infinity`.
 
 ```ts
 const formData = new FormData()
