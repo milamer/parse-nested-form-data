@@ -309,9 +309,12 @@ function handlePathPart(
  * `constructor` or `prototype`
  * - e.g. `__proto__.polluted`
  *
+ * Every error's `key` is the path after `transformEntry`, not the field name
+ * (e.g. `+a.b.c` with `depth: 2` => `DepthLimitError('a.b.c')`).
+ *
  * An entry with any other object path part named like a property on
- * `Object.prototype` (`toString`, `hasOwnProperty`, ...) is removed, like `qs`
- * does. It's parsed like any other entry first, so it causes the same errors
+ * `Object.prototype` (`toString`, `hasOwnProperty`, ...) is removed from the
+ * result. It's parsed like any other entry first, so it causes the same errors
  * as an unused name: an error doesn't tell the client which properties exist
  * on the server's `Object.prototype`.
  * - e.g. `user.toString` => `{}`

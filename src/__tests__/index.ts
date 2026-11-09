@@ -880,7 +880,7 @@ describe('Object.prototype names', () => {
     expect(result).toStrictEqual({b: 'y'})
   })
 
-  // The same results as `qs`.
+  // A removed entry keeps the other entries of its parent object or array.
   it.each<[Array<[string, string]>, object]>([
     [
       [

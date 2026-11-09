@@ -29,7 +29,7 @@ export type PathPart = {
  * Finds the `]` that ends the bracket part starting at the `[` at `open`.
  * Returns -1 if this `[` is not a bracket part but a normal character of the key.
  *
- * Brackets can be nested, like in qs: in `a[b[c]]` the last `]` belongs to
+ * Brackets can be nested: in `a[b[c]]` the last `]` belongs to
  * the first `[`.
  *
  * Special cases:
