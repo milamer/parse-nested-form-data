@@ -1,6 +1,9 @@
 node_modules
 coverage
 dist
+# Stryker (npm run mutate)
+reports
+.stryker-tmp
 .DS_Store
 
 # npm is the package manager for this repo

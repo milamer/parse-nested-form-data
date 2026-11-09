@@ -56,7 +56,8 @@
     "size": "size-limit",
     "validate": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run test:dist && npm run check:package && npm run size && npm run knip",
     "prepare": "lefthook install",
-    "test:dist": "node scripts/smoke-dist.mjs"
+    "test:dist": "node scripts/smoke-dist.mjs",
+    "mutate": "stryker run"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
@@ -64,6 +65,8 @@
     "@commitlint/config-conventional": "^21.2.4",
     "@remix-run/web-file": "^3.0.2",
     "@size-limit/preset-small-lib": "^14.3.0",
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
     "@vitest/coverage-v8": "^5.1.0",
     "doctoc": "^2.5.0",
     "fast-check": "^4.10.2",

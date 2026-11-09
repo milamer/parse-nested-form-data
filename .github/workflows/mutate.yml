@@ -1,0 +1,50 @@
+name: mutate
+# Mutation testing with Stryker. Weekly and on demand, not on PRs: a run takes
+# much longer than the tests. Surviving mutants point to weak tests.
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Mondays 04:17 UTC
+    - cron: '17 4 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⎔ Setup node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      # no dependency (or root) lifecycle scripts in CI; nothing here needs them
+      - name: 📥 Download deps
+        run: npm ci --ignore-scripts
+
+      - name: 🧬 Run mutation tests
+        run: npm run mutate
+
+      # also when the score is below `thresholds.break`, to see which mutants
+      # survived
+      - name: 📦 Upload mutation report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          if-no-files-found: error
+          retention-days: 30
