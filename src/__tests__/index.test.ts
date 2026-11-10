@@ -10,6 +10,9 @@ import {
 } from '../'
 import {outcomeWithName} from './utils'
 
+// The tests run on Node, but the project has no `@types/node`.
+declare const process: {env: Record<string, string | undefined>}
+
 describe('basic functionality', () => {
   describe('transform value', () => {
     it('can parse Numbers `+foo -> {foo: Number($value)}`', () => {
@@ -26,6 +29,14 @@ describe('basic functionality', () => {
       const result = parseFormData(formData)
       expect(result).toEqual({
         foo: false,
+      })
+    })
+    it('can parse true Booleans `&foo: true -> {foo: true}`', () => {
+      const formData = new FormData()
+      formData.append('&foo', 'true')
+      const result = parseFormData(formData)
+      expect(result).toEqual({
+        foo: true,
       })
     })
     it("can parse checkbox Booleans `&foo: on -> {foo: $value === 'on'}`", () => {
@@ -801,7 +812,10 @@ describe('bracket keys', () => {
 
   // Each shape needs the matching `]` of every `[`. Searching for it again
   // for every `[` takes seconds at this length.
-  it.each([
+  // Skipped during mutation testing: Stryker's instrumented code runs ~4x
+  // slower on all CPU cores at once, so these tests fail without a mutant and
+  // "kill" whichever mutant is active.
+  it.skipIf(process.env['STRYKER_MUTATOR_WORKER'] !== undefined).each([
     ['a[b]', 'x'],
     ['a[', ''],
     ['a[0]b', ''],
@@ -1013,6 +1027,36 @@ describe('Object.prototype names', () => {
     expect(result).toStrictEqual({})
   })
 
+  // A removed entry can go through an empty object or array that a kept entry
+  // set (only possible with such a transform). Undoing the removed entry must
+  // not delete it.
+  it.each<[string, unknown, string, unknown]>([
+    ['a', {}, 'a.toString', {a: {}}],
+    ['a', [], 'a[].toString', {a: []}],
+  ])(
+    'keeps %s with the value %j when %s is removed',
+    (keptPath, keptValue, removedPath, expected) => {
+      const values = new Map([
+        [keptPath, keptValue],
+        [removedPath, 'x'],
+      ])
+      const result = parseFormData(
+        [
+          [keptPath, 'x'],
+          [removedPath, 'x'],
+        ],
+        {
+          transformEntry: ([path]) => ({
+            path,
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
+            value: values.get(path) as string,
+          }),
+        },
+      )
+      expect(result).toStrictEqual(expected)
+    },
+  )
+
   // The same errors as for an unused name, so an error doesn't tell the
   // client which names exist on Object.prototype.
   it.each([
@@ -1088,6 +1132,29 @@ describe('Object.prototype names', () => {
         writable: false,
       })
       expect(parseFormData([['a.patched', '1']])).toStrictEqual({})
+    })
+  })
+
+  // Only object path parts are compared with Object.prototype. `a[]` has no
+  // object key, so its entries stay.
+  describe('an empty-string property added to Object.prototype', () => {
+    const proto: object = Object.prototype
+    afterEach(() => {
+      Reflect.deleteProperty(proto, '')
+    })
+
+    it('keeps the entries of `a[]`', () => {
+      Object.defineProperty(proto, '', {
+        value: 'x',
+        configurable: true,
+        writable: true,
+      })
+      expect(
+        parseFormData([
+          ['a[]', 'x'],
+          ['a[]', 'y'],
+        ]),
+      ).toStrictEqual({a: ['x', 'y']})
     })
   })
 })
