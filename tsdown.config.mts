@@ -47,8 +47,8 @@ const config: UserConfig[] = defineConfig([
     ...shared,
     entry: {index: 'src/index.ts'},
     format: 'esm',
-    dts: {emitDtsOnly: true},
-    outExtensions: () => ({dts: '.d.ts'}),
+    dts: {dtsOnly: true},
+    outExtensions: () => ({js: '.js'}),
   },
 ])
 
